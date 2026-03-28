@@ -1,17 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { motion } from "framer-motion";
-import { Plus, RefreshCw, Swords } from "lucide-react";
-import { toast } from "sonner";
-import Header from "@/components/Header";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useArena } from "@/context/ArenaContext";
-import { ARENA_MODES, GAME_MODE_META } from "@/lib/gameModes";
-import { fetchProfileNft } from "@/lib/profileNft";
-import { createRoom, fetchAllRooms, isEmptyAddress } from "@/lib/verdictArena";
+import Header from "@/components/Header";
+import { fetchStoredLocalProfileName, getLocalProfileQueryKey } from "@/lib/localProfile";
+import { fetchArenaProfile } from "@/lib/profileFactory";
+import { createRoom, fetchAllRooms, fetchRoom, registerLocalProfile, shouldUseLocalProfileAlias, waitForRoom } from "@/lib/verdictArena";
 import type { ArenaMode } from "@/types/arena";
+import { Brain, HelpCircle, Puzzle, Radio, Swords } from "lucide-react";
+import { toast } from "sonner";
+
+const MODES: { id: ArenaMode; title: string; icon: typeof Swords; desc: string }[] = [
+  { id: "debate", title: "Argue", icon: Swords, desc: "Contract assigns sides. Best argument wins, not the truth." },
+  { id: "convince", title: "Convince Me", icon: Brain, desc: "Contract generates a house stance for each room. Most convincing wins." },
+  { id: "quiz", title: "Quiz", icon: HelpCircle, desc: "Opponent accepts, owner starts the generated study note, then both race through the same 11 questions." },
+  { id: "riddle", title: "Riddle", icon: Puzzle as typeof Swords, desc: "Five generated riddles per room. First player to solve three wins." },
+];
+const CATEGORY_OPTIONS = ["Tech", "Web3", "Nature", "Culture", "Sports", "History"];
 
 function makeRoomId() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -20,27 +28,20 @@ function makeRoomId() {
 const Lobby = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { walletAddress, provider, ensureArenaNetwork, readyModes, gameContracts } = useArena();
-
-  const [mode, setMode] = useState<ArenaMode>("debate");
-  const [category, setCategory] = useState(GAME_MODE_META.debate.defaultCategory);
-  const [prompt, setPrompt] = useState("");
-
-  useEffect(() => {
-    if (readyModes.length === 0) {
-      return;
-    }
-
-    if (!readyModes.includes(mode)) {
-      const nextMode = readyModes[0];
-      setMode(nextMode);
-      setCategory(GAME_MODE_META[nextMode].defaultCategory);
-    }
-  }, [mode, readyModes]);
+  const { walletAddress, walletReady, provider, ensureArenaNetwork, readyModes, gameContracts } = useArena();
+  const [selectedMode, setSelectedMode] = useState<ArenaMode>("debate");
+  const [joinCode, setJoinCode] = useState("");
+  const [showJoinInput, setShowJoinInput] = useState(false);
+  const [category, setCategory] = useState("Tech");
 
   const profileQuery = useQuery({
-    queryKey: ["profile-nft", walletAddress],
-    queryFn: () => fetchProfileNft(walletAddress!),
+    queryKey: ["profile", walletAddress],
+    queryFn: () => fetchArenaProfile(walletAddress!),
+    enabled: Boolean(walletAddress),
+  });
+  const localProfileQuery = useQuery({
+    queryKey: getLocalProfileQueryKey(walletAddress),
+    queryFn: () => fetchStoredLocalProfileName(walletAddress),
     enabled: Boolean(walletAddress),
   });
 
@@ -51,244 +52,363 @@ const Lobby = () => {
     refetchInterval: 7_500,
   });
 
-  const visibleRooms = useMemo(() => {
-    return [...(roomsQuery.data ?? [])].sort((left, right) => {
-      if (left.mode === right.mode) {
-        return right.id.localeCompare(left.id);
-      }
+  useEffect(() => {
+    if (readyModes.length === 0) {
+      return;
+    }
+    if (!readyModes.includes(selectedMode)) {
+      setSelectedMode(readyModes[0]);
+    }
+  }, [readyModes, selectedMode]);
 
-      return left.mode.localeCompare(right.mode);
-    });
-  }, [roomsQuery.data]);
+  const visibleRooms = useMemo(() => {
+    return [...(roomsQuery.data ?? [])]
+      .filter((room) => room.mode === selectedMode)
+      .filter((room) => room.status !== "resolved")
+      .sort((left, right) => right.id.localeCompare(left.id))
+      .slice(0, 8);
+  }, [roomsQuery.data, selectedMode]);
+
+  const activeIdentity = profileQuery.data?.profileAddress ?? walletAddress ?? null;
+
+  const battleHistory = useMemo(() => {
+    if (!activeIdentity) {
+      return [];
+    }
+
+    const normalizedIdentity = activeIdentity.toLowerCase();
+
+    return [...(roomsQuery.data ?? [])]
+      .filter((room) => room.status === "resolved")
+      .filter((room) => room.owner.toLowerCase() === normalizedIdentity || room.opponent.toLowerCase() === normalizedIdentity)
+      .sort((left, right) => right.id.localeCompare(left.id))
+      .slice(0, 6);
+  }, [activeIdentity, roomsQuery.data]);
+
+  const currentMode = MODES.find((m) => m.id === selectedMode);
+  const activeProfileName = profileQuery.data?.name ?? (shouldUseLocalProfileAlias() ? localProfileQuery.data ?? null : null);
 
   const createRoomMutation = useMutation({
     mutationFn: async () => {
       if (!walletAddress || !provider) {
         throw new Error("Connect a wallet before creating rooms.");
       }
+      if (!activeProfileName) {
+        throw new Error("Create your player profile before opening a room.");
+      }
 
       const roomId = makeRoomId();
       await ensureArenaNetwork();
-      await createRoom(mode, walletAddress, provider, {
+
+      if (shouldUseLocalProfileAlias()) {
+        await registerLocalProfile(selectedMode, walletAddress, provider, activeProfileName);
+      }
+
+      await createRoom(selectedMode, walletAddress, provider, {
         roomId,
         category: category.trim(),
-        prompt: prompt.trim(),
+        profileAddress: profileQuery.data?.profileAddress ?? null,
       });
-
-      return { roomId, mode };
+      return { roomId, mode: selectedMode };
     },
-    onSuccess: async ({ roomId, mode: createdMode }) => {
+    onSuccess: async ({ roomId, mode }) => {
+      await waitForRoom(mode, roomId);
       await queryClient.invalidateQueries({ queryKey: ["rooms"] });
-      toast.success("Room created successfully.");
-      navigate(`/room/${createdMode}/${roomId}`);
+      navigate(`/room/${mode}/${roomId}`);
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "Room creation failed.");
     },
   });
 
-  if (!walletAddress) {
-    return <Navigate to="/" replace />;
-  }
-
-  if (readyModes.length === 0) {
+  if (!walletReady) {
     return (
-      <div className="min-h-screen bg-background text-foreground">
-        <Header />
-        <main className="mx-auto flex min-h-screen max-w-3xl items-center px-6 pt-24">
-          <div className="w-full rounded-2xl border border-defeat/30 bg-card/80 p-8">
-            <h1 className="font-heading text-3xl font-black">Game contracts not ready</h1>
-            <p className="mt-3 text-muted-foreground">
-              The lobby now depends on separate GenLayer contracts for debate, convince-me, and quiz. Finish deploying
-              them and set the per-mode addresses first.
-            </p>
+      <div className="min-h-screen grid-bg">
+        <Header centered />
+        <main className="mx-auto flex min-h-screen max-w-4xl items-center justify-center px-4 pt-24">
+          <div className="rounded-xl border border-border bg-card/70 px-6 py-5 text-sm text-muted-foreground">
+            Restoring wallet session...
           </div>
         </main>
       </div>
     );
   }
 
-  if (!profileQuery.data && !profileQuery.isLoading) {
+  if (!walletAddress) {
+    return <Navigate to="/" replace />;
+  }
+
+  if (!activeProfileName && !profileQuery.isLoading && !localProfileQuery.isLoading) {
     return <Navigate to="/mint" replace />;
   }
 
-  const modeMeta = GAME_MODE_META[mode];
+  if (readyModes.length === 0) {
+    return <Navigate to="/" replace />;
+  }
+
+  const handleCreateRoom = () => {
+    if (!selectedMode || !category.trim()) {
+      return;
+    }
+    createRoomMutation.mutate();
+  };
+
+  const handleJoinRoom = async () => {
+    const normalizedRoomId = joinCode.trim().toUpperCase();
+
+    if (!normalizedRoomId) {
+      return;
+    }
+
+    const modeOrder = [selectedMode, ...readyModes.filter((mode) => mode !== selectedMode)];
+    let hadLookupError = false;
+
+    for (const mode of modeOrder) {
+      try {
+        const room = await fetchRoom(mode, normalizedRoomId);
+        if (room) {
+          navigate(`/room/${room.mode}/${normalizedRoomId}`);
+          return;
+        }
+      } catch {
+        hadLookupError = true;
+      }
+    }
+
+    toast.error(
+      hadLookupError
+        ? "The room lookup hit a temporary network error. Try the code again."
+        : "No live room was found for that code on the connected contracts.",
+    );
+  };
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <Header />
-
-      <main className="mx-auto max-w-6xl px-6 pb-12 pt-28">
-        <div className="mb-10 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div className="min-h-screen grid-bg">
+      <Header centered />
+      <main className="pt-24 pb-12 px-4 max-w-6xl mx-auto grid md:grid-cols-5 gap-8">
+        <motion.div
+          initial={{ opacity: 0, x: -30 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+          className="md:col-span-3 space-y-8"
+        >
           <div>
-            <p className="text-xs uppercase tracking-[0.28em] text-primary">Multi-contract lobby</p>
-            <h1 className="mt-2 font-heading text-4xl font-black">Create rooms, inspect contracts, and join live matches.</h1>
-            {profileQuery.data && (
-              <p className="mt-3 text-muted-foreground">
-                Signed in as <span className="text-foreground">{profileQuery.data.name}</span> with {profileQuery.data.xp} XP
-                at level {profileQuery.data.level}.
-              </p>
-            )}
+            <motion.span
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.2 }}
+              className="text-xs font-heading tracking-[0.3em] text-primary font-bold uppercase"
+            >
+              Game Select
+            </motion.span>
+            <motion.h1
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3, duration: 0.6 }}
+              className="font-heading text-3xl md:text-4xl font-bold mt-2 leading-tight"
+            >
+              Pick the game,
+              <br />
+              <span className="text-primary">then open the room.</span>
+            </motion.h1>
           </div>
-          <Button variant="secondary" onClick={() => roomsQuery.refetch()} disabled={roomsQuery.isFetching}>
-            <RefreshCw className={`h-4 w-4 ${roomsQuery.isFetching ? "animate-spin" : ""}`} />
-            Refresh Rooms
-          </Button>
-        </div>
 
-        <div className="grid gap-8 lg:grid-cols-[0.95fr_1.05fr]">
-          <section className="rounded-2xl border border-border/70 bg-card/80 p-6">
-            <div className="mb-6 flex items-center gap-3">
-              <Plus className="h-5 w-5 text-primary" />
-              <h2 className="font-heading text-2xl font-bold">Open a new room</h2>
-            </div>
-
-            <div className="space-y-4">
-              <div className="grid gap-3">
-                {ARENA_MODES.map((entry) => {
-                  const contract = gameContracts[entry];
-                  const disabled = contract.status !== "ready";
-                  const meta = GAME_MODE_META[entry];
-
-                  return (
-                    <button
-                      key={entry}
-                      type="button"
-                      onClick={() => {
-                        if (disabled) {
-                          return;
-                        }
-
-                        setMode(entry);
-                        setCategory(GAME_MODE_META[entry].defaultCategory);
-                      }}
-                      disabled={disabled}
-                      className={`rounded-2xl border p-4 text-left transition ${
-                        mode === entry && !disabled
-                          ? "border-primary bg-primary/10 shadow-[0_0_24px_rgba(255,68,68,0.14)]"
-                          : "border-border/70 bg-background/50"
-                      } ${disabled ? "cursor-not-allowed opacity-50" : ""}`}
-                    >
-                      <p className="font-heading text-lg font-bold">{meta.title}</p>
-                      <p className="mt-2 text-sm text-muted-foreground">{meta.summary}</p>
-                      <p className={`mt-2 text-xs ${disabled ? "text-defeat" : "text-victory"}`}>
-                        {disabled ? contract.error ?? "This contract is not live yet." : "Contract schema is loaded."}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="grid gap-4">
-                <div>
-                  <label className="mb-2 block text-sm text-muted-foreground">Category</label>
-                  <Input value={category} onChange={(event) => setCategory(event.target.value)} className="h-11" />
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm text-muted-foreground">{modeMeta.promptLabel}</label>
-                  <textarea
-                    value={prompt}
-                    onChange={(event) => setPrompt(event.target.value)}
-                    placeholder={modeMeta.promptPlaceholder}
-                    className="min-h-32 w-full rounded-md border border-border bg-background/70 p-3 text-sm outline-none transition focus:border-primary/60"
-                  />
-                </div>
-                {mode === "convince" && (
-                  <div className="rounded-xl border border-border/60 bg-background/60 p-4 text-sm text-muted-foreground">
-                    Convince Me uses the contract's built-in house stance. Players are trying to move it away from that
-                    position, not establish neutral ground.
+          <div className="space-y-3">
+            {MODES.map((mode, i) => {
+              const live = gameContracts[mode.id].status === "ready";
+              return (
+                <motion.button
+                  key={mode.id}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.4 + i * 0.1, duration: 0.5 }}
+                  whileHover={live ? { scale: 1.01, x: 4 } : {}}
+                  whileTap={live ? { scale: 0.99 } : {}}
+                  onClick={() => live && setSelectedMode(mode.id)}
+                  className={`w-full text-left p-4 rounded-lg border transition-all ${
+                    selectedMode === mode.id && live
+                      ? "border-primary glow-red-subtle bg-card"
+                      : "border-border bg-card/50 hover:border-border hover:bg-card"
+                  } ${live ? "" : "opacity-50 cursor-not-allowed"}`}
+                >
+                  <div className="flex items-center gap-3 mb-1">
+                    <mode.icon className={`w-5 h-5 ${selectedMode === mode.id ? "text-primary" : "text-muted-foreground"}`} />
+                    <span className="font-heading font-bold text-lg">{mode.title}</span>
+                    <span className={`ml-auto flex items-center gap-1 text-xs ${live ? "text-victory" : "text-defeat"}`}>
+                      <Radio className="w-3 h-3" /> {live ? "LIVE" : "OFFLINE"}
+                    </span>
                   </div>
-                )}
-              </div>
+                  <p className="text-sm text-muted-foreground ml-8">{mode.desc}</p>
+                </motion.button>
+              );
+            })}
+          </div>
 
-              <Button
-                variant="arena"
-                className="w-full py-6 text-base"
-                disabled={
-                  createRoomMutation.isPending ||
-                  gameContracts[mode].status !== "ready" ||
-                  prompt.trim().length < 12
-                }
-                onClick={() => createRoomMutation.mutate()}
-              >
-                {createRoomMutation.isPending ? "Submitting Transaction..." : `Create ${modeMeta.title} Room`}
-              </Button>
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-border/70 bg-card/80 p-6">
-            <div className="mb-6 flex items-center gap-3">
-              <Swords className="h-5 w-5 text-primary" />
-              <h2 className="font-heading text-2xl font-bold">Live rooms</h2>
-            </div>
-
-            <div className="space-y-4">
-              {visibleRooms.length === 0 && (
-                <div className="rounded-2xl border border-dashed border-border/70 bg-background/50 p-6 text-sm text-muted-foreground">
-                  No rooms found yet. Create the first contract-backed match from the form on the left.
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }}>
+            <h3 className="text-sm text-muted-foreground font-heading tracking-wider uppercase mb-3">Battle History</h3>
+            <div className="space-y-2 max-h-72 overflow-y-auto pr-2">
+              {battleHistory.length === 0 && (
+                <div className="text-sm py-3 px-3 rounded bg-card/50 border border-border/50 text-muted-foreground">
+                  No completed matches yet.
                 </div>
               )}
-
-              {visibleRooms.map((room, index) => {
-                const meta = GAME_MODE_META[room.mode];
-                const participantLabel =
-                  room.owner.toLowerCase() === walletAddress.toLowerCase() || !isEmptyAddress(room.opponent)
-                    ? "Open Room"
-                    : "Join Room";
+              {battleHistory.map((room, i) => {
+                const label = MODES.find((mode) => mode.id === room.mode)?.title ?? room.mode;
+                const isOwner = activeIdentity ? room.owner.toLowerCase() === activeIdentity.toLowerCase() : false;
+                const opponentName = isOwner ? room.opponentName : room.ownerName;
+                const didWin = activeIdentity ? room.winner.toLowerCase() === activeIdentity.toLowerCase() : false;
 
                 return (
                   <motion.div
                     key={`${room.mode}:${room.id}`}
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.04 }}
-                    className="rounded-2xl border border-border/70 bg-background/60 p-5"
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.9 + i * 0.05 }}
+                    className="text-sm py-3 px-3 rounded bg-card/50 border border-border/50"
                   >
-                    <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                      <div className="space-y-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs uppercase tracking-[0.24em] text-primary">
-                            {meta.title}
-                          </span>
-                          <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">
-                            {room.category}
-                          </span>
-                          <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">
-                            {room.id}
-                          </span>
-                        </div>
-                        <p className="max-w-2xl text-sm text-foreground">{room.prompt}</p>
-                        {room.houseStance && (
-                          <p className="text-sm italic text-muted-foreground">House stance: "{room.houseStance}"</p>
-                        )}
-                        <p className="text-xs text-muted-foreground">
-                          {room.ownerName || meta.ownerLabel} vs {room.opponentName || `Waiting for ${meta.opponentLabel.toLowerCase()}`}
-                        </p>
-                      </div>
-
-                      <div className="flex min-w-44 flex-col gap-3">
-                        <span
-                          className={`rounded-full px-3 py-1 text-center text-xs uppercase tracking-[0.22em] ${
-                            room.status === "resolved"
-                              ? "bg-victory/15 text-victory"
-                              : room.status === "active"
-                                ? "bg-primary/15 text-primary"
-                                : "bg-border/40 text-muted-foreground"
-                          }`}
-                        >
-                          {room.status}
-                        </span>
-                        <Button asChild variant="secondary">
-                          <Link to={`/room/${room.mode}/${room.id}`}>{participantLabel}</Link>
-                        </Button>
-                      </div>
+                    You took a{" "}
+                    <span className={didWin ? "text-victory font-semibold" : "text-defeat font-semibold"}>
+                      [{didWin ? "Victory" : "Defeat"}]
+                    </span>{" "}
+                    against {opponentName || "Unknown"} in{" "}
+                    <span className="text-label-blue font-semibold">[{label}]</span>.
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {room.prompt} <span className="ml-2 uppercase">{room.id}</span>
                     </div>
                   </motion.div>
                 );
               })}
             </div>
-          </section>
-        </div>
+            <p className="text-xs text-muted-foreground mt-2">Showing your latest completed matches.</p>
+          </motion.div>
+
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, x: 30 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.3, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+          className="md:col-span-2"
+        >
+          <div className="sticky top-24 rounded-xl border border-border bg-card p-6 space-y-6">
+            <AnimatePresence mode="wait">
+              {currentMode ? (
+                <motion.div
+                  key={currentMode.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.3 }}
+                  className="space-y-6"
+                >
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <currentMode.icon className="w-5 h-5 text-primary" />
+                      <h2 className="font-heading text-2xl font-bold">{currentMode.title}</h2>
+                    </div>
+                    <p className="text-sm text-muted-foreground">{currentMode.desc}</p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      Choose a category. The contract generates the room topic, scenario, question, or riddle clue by itself.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {CATEGORY_OPTIONS.map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() => setCategory(option)}
+                          className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                            category === option
+                              ? "bg-primary text-primary-foreground glow-red-subtle"
+                              : "bg-card border border-border text-muted-foreground hover:border-primary/50"
+                          }`}
+                        >
+                          {option}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                    <Button
+                      variant="arena"
+                      className="w-full py-5"
+                      onClick={handleCreateRoom}
+                      disabled={createRoomMutation.isPending || !category.trim()}
+                    >
+                      {createRoomMutation.isPending ? "Creating..." : "Create Room"}
+                    </Button>
+                  </motion.div>
+
+                  <AnimatePresence mode="wait">
+                    {showJoinInput ? (
+                      <motion.div
+                        key="input"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="flex gap-2 overflow-hidden"
+                      >
+                        <Input
+                          value={joinCode}
+                          onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                          placeholder="ROOM CODE"
+                          className="bg-secondary border-border font-mono tracking-widest uppercase"
+                          maxLength={6}
+                        />
+                        <Button variant="secondary" onClick={() => void handleJoinRoom()} disabled={!joinCode.trim()}>
+                          Join
+                        </Button>
+                      </motion.div>
+                    ) : (
+                      <motion.div key="button" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                        <Button variant="secondary" className="w-full py-5" onClick={() => setShowJoinInput(true)}>
+                          Join Room
+                        </Button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                  <p className="text-xs text-muted-foreground text-center">Create or join from this game.</p>
+
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.45 }}>
+                    <h3 className="text-sm text-muted-foreground font-heading tracking-wider uppercase mb-3">Live Rooms</h3>
+                    <div className="space-y-2 max-h-72 overflow-y-auto pr-2">
+                      {visibleRooms.length === 0 && (
+                        <div className="text-sm py-3 px-3 rounded bg-card/50 border border-border/50 text-muted-foreground">
+                          No live rooms yet.
+                        </div>
+                      )}
+                      {visibleRooms.map((room, i) => {
+                        const label = MODES.find((mode) => mode.id === room.mode)?.title ?? room.mode;
+                        return (
+                          <motion.div
+                            key={`${room.mode}:${room.id}`}
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: 0.5 + i * 0.05 }}
+                            className="text-sm py-2 px-3 rounded bg-card/50 border border-border/50"
+                          >
+                            <Link to={`/room/${room.mode}/${room.id}`} className="block">
+                              <span className="text-label-blue font-semibold">[{label}]</span> {room.prompt}
+                              <span className="text-muted-foreground ml-2 text-xs">{room.id}</span>
+                            </Link>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">Showing the latest contract-backed rooms.</p>
+                  </motion.div>
+                </motion.div>
+              ) : (
+                <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-12">
+                  <p className="text-muted-foreground">Select a game mode to continue</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </motion.div>
       </main>
     </div>
   );

@@ -30,6 +30,7 @@ interface GameContractState {
 interface ArenaContextValue {
   walletAddress: Address | null;
   provider: BrowserEthereumProvider | null;
+  walletReady: boolean;
   connectWallet: () => Promise<void>;
   disconnectWallet: () => void;
   ensureArenaNetwork: () => Promise<void>;
@@ -40,8 +41,8 @@ interface ArenaContextValue {
   gameContracts: Record<ArenaMode, GameContractState>;
   readyModes: ArenaMode[];
   configuredModes: ArenaMode[];
-  profileContractAddress: string | null;
-  profileContractConfigured: boolean;
+  profileFactoryAddress: string | null;
+  profileFactoryConfigured: boolean;
   chain: string;
   endpoint: string;
   profileChain: string;
@@ -51,6 +52,35 @@ interface ArenaContextValue {
 const ArenaContext = createContext<ArenaContextValue | null>(null);
 
 function buildInitialGameContracts(): Record<ArenaMode, GameContractState> {
+  if (arenaEnv.hasVdtCoreAddress) {
+    return {
+      debate: {
+        address: arenaEnv.vdtCoreAddress,
+        status: "checking",
+        error: null,
+        schema: null,
+      },
+      convince: {
+        address: arenaEnv.vdtCoreAddress,
+        status: "checking",
+        error: null,
+        schema: null,
+      },
+      quiz: {
+        address: arenaEnv.vdtCoreAddress,
+        status: "checking",
+        error: null,
+        schema: null,
+      },
+      riddle: {
+        address: arenaEnv.vdtCoreAddress,
+        status: "checking",
+        error: null,
+        schema: null,
+      },
+    };
+  }
+
   return {
     debate: {
       address: arenaEnv.contractAddresses.debate,
@@ -70,11 +100,19 @@ function buildInitialGameContracts(): Record<ArenaMode, GameContractState> {
       error: arenaEnv.contractAddresses.quiz ? null : "Set VITE_QUIZ_CONTRACT_ADDRESS after deployment.",
       schema: null,
     },
+    riddle: {
+      address: arenaEnv.contractAddresses.riddle,
+      status: arenaEnv.contractAddresses.riddle ? "checking" : "missing-config",
+      error: arenaEnv.contractAddresses.riddle ? null : "Set VITE_RIDDLE_CONTRACT_ADDRESS after deployment.",
+      schema: null,
+    },
   };
 }
 
 export function ArenaProvider({ children }: { children: ReactNode }) {
   const [provider, setProvider] = useState<BrowserEthereumProvider | null>(null);
+  const [providerReady, setProviderReady] = useState(false);
+  const [walletReady, setWalletReady] = useState(false);
   const [walletAddress, setWalletAddress] = useState<Address | null>(null);
   const [walletChainId, setWalletChainId] = useState<string | null>(null);
   const [walletArenaStatus, setWalletArenaStatus] = useState<NetworkStatus>("unknown");
@@ -96,14 +134,22 @@ export function ArenaProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const nextProvider = getBrowserProvider();
     setProvider(nextProvider);
+    setProviderReady(true);
   }, []);
 
   useEffect(() => {
-    if (!provider) {
+    if (!providerReady) {
       return;
     }
 
     let cancelled = false;
+
+    if (!provider) {
+      setWalletReady(true);
+      return () => {
+        cancelled = true;
+      };
+    }
 
     void (async () => {
       try {
@@ -116,12 +162,14 @@ export function ArenaProvider({ children }: { children: ReactNode }) {
           setWalletAddress(connectedAddress);
           setWalletChainId(chainId);
           updateWalletStatuses(chainId);
+          setWalletReady(true);
         }
       } catch {
         if (!cancelled) {
           setWalletAddress(null);
           setWalletChainId(null);
           updateWalletStatuses(null);
+          setWalletReady(true);
         }
       }
     })();
@@ -129,7 +177,7 @@ export function ArenaProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [provider]);
+  }, [provider, providerReady]);
 
   useEffect(() => {
     if (!provider?.on) {
@@ -139,6 +187,7 @@ export function ArenaProvider({ children }: { children: ReactNode }) {
     const handleAccountsChanged = async () => {
       const connectedAddress = await getConnectedWalletAddress(provider);
       setWalletAddress(connectedAddress);
+      setWalletReady(true);
     };
 
     const handleChainChanged = (nextChainId: unknown) => {
@@ -164,7 +213,9 @@ export function ArenaProvider({ children }: { children: ReactNode }) {
 
       await Promise.all(
         ARENA_MODES.map(async (mode) => {
-          if (!arenaEnv.contractAddresses[mode]) {
+          const configuredAddress = arenaEnv.hasVdtCoreAddress ? arenaEnv.vdtCoreAddress : arenaEnv.contractAddresses[mode];
+
+          if (!configuredAddress) {
             return;
           }
 
@@ -173,7 +224,7 @@ export function ArenaProvider({ children }: { children: ReactNode }) {
 
             if (!cancelled) {
               nextState[mode] = {
-                address: arenaEnv.contractAddresses[mode],
+                address: configuredAddress,
                 status: "ready",
                 error: null,
                 schema,
@@ -182,7 +233,7 @@ export function ArenaProvider({ children }: { children: ReactNode }) {
           } catch (error) {
             if (!cancelled) {
               nextState[mode] = {
-                address: arenaEnv.contractAddresses[mode],
+                address: configuredAddress,
                 status: "error",
                 error: error instanceof Error ? error.message : "Unable to load the contract schema.",
                 schema: null,
@@ -232,10 +283,14 @@ export function ArenaProvider({ children }: { children: ReactNode }) {
     await ensureArenaNetwork();
     const address = await requestWalletAddress(provider);
     setWalletAddress(address);
+    setWalletReady(true);
   }
 
   function disconnectWallet() {
     setWalletAddress(null);
+    setWalletChainId(null);
+    updateWalletStatuses(null);
+    setWalletReady(true);
   }
 
   const readyModes = ARENA_MODES.filter((mode) => gameContracts[mode].status === "ready");
@@ -245,6 +300,7 @@ export function ArenaProvider({ children }: { children: ReactNode }) {
       value={{
         walletAddress,
         provider,
+        walletReady,
         connectWallet,
         disconnectWallet,
         ensureArenaNetwork,
@@ -255,8 +311,8 @@ export function ArenaProvider({ children }: { children: ReactNode }) {
         gameContracts,
         readyModes,
         configuredModes: arenaEnv.configuredModes,
-        profileContractAddress: arenaEnv.profileContractAddress,
-        profileContractConfigured: arenaEnv.hasProfileContractAddress,
+        profileFactoryAddress: arenaEnv.profileFactoryAddress,
+        profileFactoryConfigured: arenaEnv.hasProfileFactoryAddress,
         chain: getArenaChain().name,
         endpoint: getArenaEndpoint(),
         profileChain: getProfileChain().name,

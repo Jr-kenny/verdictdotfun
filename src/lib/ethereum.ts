@@ -20,6 +20,18 @@ interface WalletChainConfig {
   switchErrorMessage: string;
 }
 
+function isUnknownChainError(error: { code?: number; message?: string } | undefined) {
+  const message = error?.message?.toLowerCase() ?? "";
+
+  return (
+    error?.code === 4902 ||
+    message.includes("unrecognized chain id") ||
+    message.includes("unknown chain") ||
+    message.includes("chain has not been added") ||
+    message.includes("try adding the chain")
+  );
+}
+
 declare global {
   interface Window {
     ethereum?: BrowserEthereumProvider;
@@ -84,7 +96,7 @@ async function ensureWalletChain(provider: BrowserEthereumProvider, config: Wall
   } catch (error) {
     const providerError = error as { code?: number; message?: string };
 
-    if (providerError?.code !== 4902) {
+    if (!isUnknownChainError(providerError)) {
       throw new Error(providerError?.message || config.switchErrorMessage);
     }
 
@@ -93,10 +105,14 @@ async function ensureWalletChain(provider: BrowserEthereumProvider, config: Wall
       params: [config.addChainParams],
     });
 
-    await provider.request({
-      method: "wallet_switchEthereumChain",
-      params: [{ chainId: targetChainId }],
-    });
+    const nextChainId = await getWalletChainId(provider);
+
+    if (nextChainId !== targetChainId) {
+      await provider.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: targetChainId }],
+      });
+    }
   }
 }
 
@@ -112,6 +128,6 @@ export async function ensureProfileWalletChain(provider: BrowserEthereumProvider
   return ensureWalletChain(provider, {
     targetChainId: getProfileChainHexId(),
     addChainParams: getProfileWalletAddChainParams(),
-    switchErrorMessage: "Failed to switch the wallet to the profile NFT network.",
+    switchErrorMessage: "Failed to switch the wallet to the Verdict NFT network.",
   });
 }

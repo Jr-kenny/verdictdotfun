@@ -1,17 +1,11 @@
 import type { ArenaMode } from "@/types/arena";
 
 const SUPPORTED_CHAINS = ["localnet", "studionet", "testnetAsimov", "testnetBradbury"] as const;
-const SUPPORTED_PROFILE_CHAINS = ["baseSepolia"] as const;
 
 export type ArenaChainKey = (typeof SUPPORTED_CHAINS)[number];
-export type ProfileChainKey = (typeof SUPPORTED_PROFILE_CHAINS)[number];
 
 function isSupportedChain(value: string | undefined): value is ArenaChainKey {
   return Boolean(value && SUPPORTED_CHAINS.includes(value as ArenaChainKey));
-}
-
-function isSupportedProfileChain(value: string | undefined): value is ProfileChainKey {
-  return Boolean(value && SUPPORTED_PROFILE_CHAINS.includes(value as ProfileChainKey));
 }
 
 function cleanValue(value: string | undefined) {
@@ -21,30 +15,34 @@ function cleanValue(value: string | undefined) {
 
 const chain = isSupportedChain(import.meta.env.VITE_GENLAYER_CHAIN)
   ? import.meta.env.VITE_GENLAYER_CHAIN
-  : "testnetBradbury";
+  : "studionet";
+
+const vdtCoreAddress = cleanValue(import.meta.env.VITE_VDT_CORE_CONTRACT_ADDRESS);
 
 const contractAddresses: Record<ArenaMode, string | null> = {
   debate: cleanValue(import.meta.env.VITE_DEBATE_CONTRACT_ADDRESS),
   convince: cleanValue(import.meta.env.VITE_CONVINCE_ME_CONTRACT_ADDRESS),
   quiz: cleanValue(import.meta.env.VITE_QUIZ_CONTRACT_ADDRESS),
+  riddle: cleanValue(import.meta.env.VITE_RIDDLE_CONTRACT_ADDRESS),
 };
 
-const configuredModes = (Object.entries(contractAddresses) as [ArenaMode, string | null][])
-  .filter(([, address]) => Boolean(address))
-  .map(([mode]) => mode);
-
-const profileChain = isSupportedProfileChain(import.meta.env.VITE_PROFILE_NFT_CHAIN)
-  ? import.meta.env.VITE_PROFILE_NFT_CHAIN
-  : "baseSepolia";
+const configuredModes = vdtCoreAddress
+  ? (["debate", "convince", "quiz", "riddle"] as ArenaMode[])
+  : (Object.entries(contractAddresses) as [ArenaMode, string | null][])
+      .filter(([, address]) => Boolean(address))
+      .map(([mode]) => mode);
 
 export const arenaEnv = {
   chain,
   endpoint: import.meta.env.VITE_GENLAYER_ENDPOINT?.trim() || "",
+  vdtCoreAddress,
+  hasVdtCoreAddress: Boolean(vdtCoreAddress),
   contractAddresses,
   configuredModes,
   hasConfiguredModes: configuredModes.length > 0,
-  profileContractAddress: cleanValue(import.meta.env.VITE_PROFILE_NFT_CONTRACT_ADDRESS),
-  hasProfileContractAddress: Boolean(cleanValue(import.meta.env.VITE_PROFILE_NFT_CONTRACT_ADDRESS)),
-  profileChain,
-  profileRpcUrl: import.meta.env.VITE_PROFILE_NFT_RPC_URL?.trim() || "",
+  profileFactoryAddress: vdtCoreAddress,
+  hasProfileFactoryAddress: Boolean(vdtCoreAddress),
+  verdictNftAddress: cleanValue(import.meta.env.VITE_VERDICT_NFT_CONTRACT_ADDRESS),
+  hasVerdictNftAddress: Boolean(cleanValue(import.meta.env.VITE_VERDICT_NFT_CONTRACT_ADDRESS)),
+  profileEvmRpcUrl: cleanValue(import.meta.env.VITE_BASE_SEPOLIA_RPC_URL) ?? "https://sepolia.base.org",
 } as const;

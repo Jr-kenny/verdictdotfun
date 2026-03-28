@@ -5,9 +5,11 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
 import { ArenaProvider } from "@/context/ArenaContext";
 import Landing from "@/pages/Landing";
+import Leaderboard from "@/pages/Leaderboard";
 import Lobby from "@/pages/Lobby";
 import MintProfile from "@/pages/MintProfile";
 import NotFound from "@/pages/NotFound";
+import QuizMaterial from "@/pages/QuizMaterial";
 import RoomLobby from "@/pages/RoomLobby";
 
 const queryClient = new QueryClient();
@@ -23,8 +25,10 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Landing />} />
+            <Route path="/leaderboard" element={<Leaderboard />} />
             <Route path="/mint" element={<MintProfile />} />
             <Route path="/lobby" element={<Lobby />} />
+            <Route path="/room/:mode/:roomId/material" element={<QuizMaterial />} />
             <Route path="/room/:mode/:roomId" element={<RoomLobby />} />
             <Route path="/room/:roomId" element={<LegacyRoomRedirect />} />
             <Route path="/game/:roomId/:mode" element={<LegacyRoomRedirect />} />

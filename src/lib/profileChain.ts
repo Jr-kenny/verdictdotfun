@@ -1,30 +1,41 @@
 import { baseSepolia } from "viem/chains";
 import { arenaEnv } from "@/lib/env";
+import { getArenaChain, getArenaChainHexId, getArenaEndpoint, getWalletAddChainParams } from "@/lib/genlayer";
 
-const PROFILE_CHAIN_BY_KEY = {
-  baseSepolia,
-};
+function shouldUseVerdictNftChain() {
+  return arenaEnv.hasVerdictNftAddress;
+}
 
 export function getProfileChain() {
-  return PROFILE_CHAIN_BY_KEY[arenaEnv.profileChain];
+  if (shouldUseVerdictNftChain()) {
+    return baseSepolia;
+  }
+  return getArenaChain();
 }
 
 export function getProfileRpcUrl() {
-  return arenaEnv.profileRpcUrl || getProfileChain().rpcUrls.default.http[0];
+  if (shouldUseVerdictNftChain()) {
+    return arenaEnv.profileEvmRpcUrl;
+  }
+  return getArenaEndpoint();
 }
 
 export function getProfileChainHexId() {
-  return `0x${getProfileChain().id.toString(16)}`;
+  if (shouldUseVerdictNftChain()) {
+    return `0x${baseSepolia.id.toString(16)}`;
+  }
+  return getArenaChainHexId();
 }
 
 export function getProfileWalletAddChainParams() {
-  const chain = getProfileChain();
-
-  return {
-    chainId: getProfileChainHexId(),
-    chainName: chain.name,
-    nativeCurrency: chain.nativeCurrency,
-    rpcUrls: [getProfileRpcUrl()],
-    blockExplorerUrls: chain.blockExplorers?.default?.url ? [chain.blockExplorers.default.url] : [],
-  };
+  if (shouldUseVerdictNftChain()) {
+    return {
+      chainId: `0x${baseSepolia.id.toString(16)}`,
+      chainName: baseSepolia.name,
+      nativeCurrency: baseSepolia.nativeCurrency,
+      rpcUrls: [arenaEnv.profileEvmRpcUrl],
+      blockExplorerUrls: baseSepolia.blockExplorers?.default?.url ? [baseSepolia.blockExplorers.default.url] : [],
+    };
+  }
+  return getWalletAddChainParams();
 }

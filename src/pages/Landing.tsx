@@ -1,190 +1,106 @@
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { AlertTriangle, Blocks, ShieldCheck, Wallet } from "lucide-react";
 import { toast } from "sonner";
-import Header from "@/components/Header";
+import { Award, Radio, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useArena } from "@/context/ArenaContext";
-import { ARENA_MODES, GAME_MODE_META } from "@/lib/gameModes";
-import { getArenaChainHexId } from "@/lib/genlayer";
-import { getProfileChainHexId } from "@/lib/profileChain";
+import Header from "@/components/Header";
 
 const Landing = () => {
+  const { walletAddress, connectWallet } = useArena();
   const navigate = useNavigate();
-  const {
-    connectWallet,
-    ensureArenaNetwork,
-    ensureProfileNetwork,
-    walletAddress,
-    walletChainId,
-    walletArenaStatus,
-    walletProfileStatus,
-    gameContracts,
-    readyModes,
-    endpoint,
-    chain,
-    profileChain,
-    profileEndpoint,
-    profileContractAddress,
-    profileContractConfigured,
-  } = useArena();
 
-  async function handleContinue() {
+  const handleEnter = async () => {
     try {
       if (!walletAddress) {
         await connectWallet();
       }
-
-      navigate("/mint");
+      navigate("/lobby");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Wallet connection failed.");
     }
-  }
-
-  async function handleSwitchArenaNetwork() {
-    try {
-      await ensureArenaNetwork();
-      toast.success(`Wallet switched to ${chain}.`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Network switch failed.");
-    }
-  }
-
-  async function handleSwitchProfileNetwork() {
-    try {
-      await ensureProfileNetwork();
-      toast.success(`Wallet switched to ${profileChain}.`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Profile network switch failed.");
-    }
-  }
+  };
 
   return (
-    <div className="min-h-screen overflow-hidden bg-background text-foreground">
+    <div className="min-h-screen grid-bg noise-bg relative overflow-hidden">
       <Header />
 
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-1/2 top-24 h-[38rem] w-[38rem] -translate-x-1/2 rounded-full bg-primary/10 blur-[140px]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_28%),linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[length:auto,54px_54px,54px_54px]" />
-      </div>
+      <motion.div
+        className="absolute top-1/2 left-1/2 w-[600px] h-[600px] rounded-full bg-primary/5 blur-[120px]"
+        animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.5, 0.3] }}
+        transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+        style={{ x: "-50%", y: "-50%" }}
+      />
+      <motion.div
+        className="absolute top-1/3 right-1/4 w-[300px] h-[300px] rounded-full bg-primary/3 blur-[100px]"
+        animate={{ x: [0, 30, 0], y: [0, -20, 0], opacity: [0.2, 0.4, 0.2] }}
+        transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+      />
 
-      <main className="relative mx-auto flex min-h-screen max-w-6xl flex-col justify-center gap-10 px-6 pb-16 pt-28">
-        <div className="grid gap-10 lg:grid-cols-[1.15fr_0.85fr]">
-          <motion.section
-            initial={{ opacity: 0, y: 30 }}
+      <main className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4 text-center pt-16">
+        <motion.h1
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+          className="font-heading text-5xl md:text-7xl font-black tracking-tight leading-tight mb-4"
+        >
+          Where Arguments
+          <br />
+          <motion.span
+            className="text-primary inline-block"
+            initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7 }}
-            className="space-y-6"
+            transition={{ duration: 0.8, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
           >
-            <span className="inline-flex rounded-full border border-primary/30 bg-primary/10 px-4 py-1 text-xs uppercase tracking-[0.32em] text-primary">
-              Multi-contract GenLayer arena
-            </span>
-            <h1 className="max-w-3xl font-heading text-5xl font-black leading-[0.95] md:text-7xl">
-              Three game contracts. One upgradable player NFT.
-            </h1>
-            <p className="max-w-2xl text-lg text-muted-foreground md:text-xl">
-              Debate, Convince Me, and Quiz now have separate GenLayer runtimes. Player identity and XP live in a
-              dedicated EVM profile NFT that the games target after finalized verdicts.
-            </p>
+            Get Judged On-Chain
+          </motion.span>
+        </motion.h1>
 
-            <div className="flex flex-wrap gap-4">
-              <Button variant="arena" size="lg" className="px-8 py-6 text-base" onClick={() => void handleContinue()}>
-                {walletAddress ? "Continue To Profile Mint" : "Connect Wallet"}
-              </Button>
-              <Button variant="secondary" size="lg" className="px-8 py-6 text-base" onClick={() => void handleSwitchArenaNetwork()}>
-                Add / Switch Bradbury
-              </Button>
-              <Button variant="secondary" size="lg" className="px-8 py-6 text-base" onClick={() => void handleSwitchProfileNetwork()}>
-                Add / Switch Base Sepolia
-              </Button>
-            </div>
-          </motion.section>
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.6, duration: 0.6 }}
+          className="text-muted-foreground text-lg md:text-xl max-w-md mb-10"
+        >
+          Two players. One contract. No mercy.
+        </motion.p>
 
-          <motion.aside
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.7, delay: 0.1 }}
-            className="space-y-4"
-          >
-            <div className="rounded-2xl border border-border/70 bg-card/80 p-6">
-              <div className="mb-6 flex items-center gap-3">
-                <Blocks className="h-5 w-5 text-primary" />
-                <h2 className="font-heading text-xl font-bold">Runtime Status</h2>
-              </div>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.8, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.97 }}
+        >
+          <Button variant="arena" size="lg" className="px-10 py-6 text-lg" onClick={() => void handleEnter()}>
+            Enter the Arena
+          </Button>
+        </motion.div>
 
-              <div className="space-y-4 text-sm">
-                <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                  <p className="mb-1 text-xs uppercase tracking-[0.24em] text-muted-foreground">GenLayer gameplay</p>
-                  <p className="break-all font-mono text-foreground">
-                    {chain} ({getArenaChainHexId()})
-                  </p>
-                  <p className="mt-2 break-all font-mono text-muted-foreground">{endpoint}</p>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                  <p className="mb-1 text-xs uppercase tracking-[0.24em] text-muted-foreground">Profile NFT network</p>
-                  <p className="break-all font-mono text-foreground">
-                    {profileChain} ({getProfileChainHexId()})
-                  </p>
-                  <p className="mt-2 break-all font-mono text-muted-foreground">{profileEndpoint}</p>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                  <p className="mb-1 text-xs uppercase tracking-[0.24em] text-muted-foreground">Profile NFT contract</p>
-                  <p className="break-all font-mono text-foreground">{profileContractAddress ?? "Not configured"}</p>
-                  <p className={`mt-2 text-xs ${profileContractConfigured ? "text-victory" : "text-defeat"}`}>
-                    {profileContractConfigured ? "Profile NFT address is configured." : "Set VITE_PROFILE_NFT_CONTRACT_ADDRESS."}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                  <p className="mb-2 text-xs uppercase tracking-[0.24em] text-muted-foreground">Wallet</p>
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Wallet className="h-4 w-4 text-primary" />
-                    <span>{walletAddress ?? "No wallet connected yet."}</span>
-                  </div>
-                  <div className="mt-2 text-xs">
-                    <p className={walletArenaStatus === "ready" ? "text-victory" : "text-defeat"}>
-                      {walletArenaStatus === "ready"
-                        ? `Gameplay network ready (${walletChainId ?? "unknown"}).`
-                        : "Gameplay network still needs a wallet switch."}
-                    </p>
-                    <p className={walletProfileStatus === "ready" ? "mt-1 text-victory" : "mt-1 text-defeat"}>
-                      {walletProfileStatus === "ready"
-                        ? `Profile network ready (${walletChainId ?? "unknown"}).`
-                        : "Profile NFT network still needs a wallet switch."}
-                    </p>
-                  </div>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                  <p className="mb-3 text-xs uppercase tracking-[0.24em] text-muted-foreground">Game contracts</p>
-                  <div className="space-y-3">
-                    {ARENA_MODES.map((mode) => {
-                      const contract = gameContracts[mode];
-                      const healthy = contract.status === "ready";
-                      return (
-                        <div key={mode} className="rounded-xl border border-border/60 bg-card/60 p-3">
-                          <div className="flex items-center gap-2">
-                            {healthy ? (
-                              <ShieldCheck className="h-4 w-4 text-victory" />
-                            ) : (
-                              <AlertTriangle className="h-4 w-4 text-defeat" />
-                            )}
-                            <span className="font-heading text-sm font-bold">{GAME_MODE_META[mode].title}</span>
-                          </div>
-                          <p className="mt-2 break-all font-mono text-xs text-muted-foreground">
-                            {contract.address ?? "Not configured"}
-                          </p>
-                          <p className={`mt-2 text-xs ${healthy ? "text-victory" : "text-defeat"}`}>
-                            {healthy ? "Schema loaded successfully." : contract.error ?? "Waiting for configuration."}
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <p className="mt-3 text-xs text-muted-foreground">{readyModes.length} of 3 game contracts are live.</p>
-                </div>
-              </div>
-            </div>
-          </motion.aside>
-        </div>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 1.1, duration: 0.6 }}
+          className="flex flex-wrap items-center justify-center gap-4 mt-16"
+        >
+          {[
+            { icon: Zap, label: "AI Judge" },
+            { icon: Award, label: "NFT Rank" },
+            { icon: Radio, label: "Live Rooms" },
+          ].map(({ icon: Icon, label }, i) => (
+            <motion.div
+              key={label}
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 1.2 + i * 0.15, duration: 0.4 }}
+              whileHover={{ y: -3, borderColor: "hsl(1 77% 55% / 0.5)" }}
+              className="flex items-center gap-2 px-4 py-2 rounded-full border border-border bg-card/50 text-sm text-muted-foreground transition-colors"
+            >
+              <Icon className="w-4 h-4 text-primary" />
+              {label}
+            </motion.div>
+          ))}
+        </motion.div>
       </main>
     </div>
   );
