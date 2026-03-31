@@ -1,24 +1,33 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { toast } from "sonner";
 import { Award, Radio, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useArena } from "@/context/ArenaContext";
 import Header from "@/components/Header";
 
 const Landing = () => {
-  const { walletAddress, connectWallet } = useArena();
+  const { walletAddress, openWalletModal } = useArena();
   const navigate = useNavigate();
+  const [pendingEnter, setPendingEnter] = useState(false);
+
+  useEffect(() => {
+    if (!pendingEnter || !walletAddress) {
+      return;
+    }
+
+    setPendingEnter(false);
+    navigate("/lobby");
+  }, [navigate, pendingEnter, walletAddress]);
 
   const handleEnter = async () => {
-    try {
-      if (!walletAddress) {
-        await connectWallet();
-      }
-      navigate("/lobby");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Wallet connection failed.");
+    if (!walletAddress) {
+      setPendingEnter(true);
+      openWalletModal();
+      return;
     }
+
+    navigate("/lobby");
   };
 
   return (
@@ -44,7 +53,7 @@ const Landing = () => {
           transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
           className="font-heading text-5xl md:text-7xl font-black tracking-tight leading-tight mb-4"
         >
-          Where Arguments
+          Play On-Chain Games.
           <br />
           <motion.span
             className="text-primary inline-block"
@@ -62,7 +71,7 @@ const Landing = () => {
           transition={{ delay: 0.6, duration: 0.6 }}
           className="text-muted-foreground text-lg md:text-xl max-w-md mb-10"
         >
-          Two players. One contract. No mercy.
+          A multiplayer on-chain game.
         </motion.p>
 
         <motion.div

@@ -3,8 +3,10 @@ import { getAddress, isAddress } from "viem";
 import type { Address } from "viem";
 import { arenaEnv } from "@/lib/env";
 import { createArenaClient } from "@/lib/genlayer";
+import { readContractWithDebug } from "@/lib/genlayerRead";
+import { waitForConsensusReceipt } from "@/lib/genlayerTransactions";
 import type { BrowserEthereumProvider } from "@/lib/ethereum";
-import type { ArenaMode, ArenaRoom, ArenaRoomStatus, QuizPlayerState, QuizQuestionState } from "@/types/arena";
+import type { ArenaMode, ArenaRoom, ArenaRoomStatus, ArgueStyle } from "@/types/arena";
 
 type JsonRecord = Record<string, unknown>;
 type WalletArenaClient = ReturnType<typeof createWalletClient>;
@@ -20,14 +22,6 @@ function getLegacyConfiguredContractAddress(mode: ArenaMode): Address {
   }
 
   return address as Address;
-}
-
-function getConfiguredCoreAddress(): Address {
-  if (!arenaEnv.vdtCoreAddress) {
-    throw new Error("Missing VITE_VDT_CORE_CONTRACT_ADDRESS.");
-  }
-
-  return arenaEnv.vdtCoreAddress as Address;
 }
 
 function asRecord(value: unknown): JsonRecord {
@@ -186,6 +180,10 @@ async function writeContractWithRetry(
   throw lastError;
 }
 
+function asArgueStyle(value: unknown): ArgueStyle {
+  return asString(value) === "convince" ? "convince" : "debate";
+}
+
 function parseRoom(mode: ArenaMode, raw: unknown): ArenaRoom | null {
   const record = asRecord(raw);
   const id = asString(record.id).trim();
@@ -197,6 +195,7 @@ function parseRoom(mode: ArenaMode, raw: unknown): ArenaRoom | null {
   return {
     id,
     mode,
+    argueStyle: record.argue_style === undefined ? undefined : asArgueStyle(record.argue_style),
     owner: asAddressString(record.owner) || EMPTY_ADDRESS,
     ownerName: asString(record.owner_name),
     opponent: asAddressString(record.opponent) || EMPTY_ADDRESS,
@@ -211,55 +210,6 @@ function parseRoom(mode: ArenaMode, raw: unknown): ArenaRoom | null {
     ownerScore: asNumber(record.owner_score),
     opponentScore: asNumber(record.opponent_score),
     verdictReasoning: asString(record.verdict_reasoning),
-    materialBody: record.material_body === undefined ? undefined : asString(record.material_body),
-    questionCount: record.question_count === undefined ? undefined : asNumber(record.question_count),
-    currentQuestionIndex:
-      record.current_question_index === undefined ? undefined : asNumber(record.current_question_index),
-    ownerQuestionsSecured:
-      record.owner_questions_secured === undefined ? undefined : asNumber(record.owner_questions_secured),
-    opponentQuestionsSecured:
-      record.opponent_questions_secured === undefined ? undefined : asNumber(record.opponent_questions_secured),
-    ownerAttemptsUsed:
-      record.owner_attempts_used === undefined ? undefined : asNumber(record.owner_attempts_used),
-    opponentAttemptsUsed:
-      record.opponent_attempts_used === undefined ? undefined : asNumber(record.opponent_attempts_used),
-    ownerReady: record.owner_ready === undefined ? undefined : asBoolean(record.owner_ready),
-    opponentReady: record.opponent_ready === undefined ? undefined : asBoolean(record.opponent_ready),
-    currentTurn: record.current_turn === undefined ? undefined : asAddressString(record.current_turn),
-    revealedAnswer: record.revealed_answer === undefined ? undefined : asString(record.revealed_answer),
-    accepted: record.accepted === undefined ? undefined : asBoolean(record.accepted),
-    ownerLastResult: record.owner_last_result === undefined ? undefined : asString(record.owner_last_result),
-    opponentLastResult: record.opponent_last_result === undefined ? undefined : asString(record.opponent_last_result),
-  };
-}
-
-function parseQuizPlayerState(raw: unknown): QuizPlayerState {
-  const record = asRecord(raw);
-  const role = asString(record.role) === "opponent" ? "opponent" : "owner";
-
-  return {
-    role,
-    ready: asBoolean(record.ready),
-    questionsSecured: asNumber(record.questions_secured),
-    attemptsUsed: asNumber(record.attempts_used),
-    attemptsRemaining: asNumber(record.attempts_remaining),
-    totalQuestions: asNumber(record.total_questions),
-    questionIndex: asNumber(record.question_index),
-    status: asStatus(record.status),
-    latestSubmission: asString(record.latest_submission),
-    waitingOnOther: asBoolean(record.waiting_on_other),
-    canAnswer: asBoolean(record.can_answer),
-  };
-}
-
-function parseQuizQuestionState(raw: unknown): QuizQuestionState {
-  const record = asRecord(raw);
-  return {
-    questionIndex: asNumber(record.question_index),
-    question: asString(record.question),
-    options: Array.isArray(record.options) ? record.options.map((value) => asString(value)) : [],
-    revealedAnswer: asString(record.revealed_answer),
-    currentTurn: asString(record.current_turn),
   };
 }
 
@@ -267,80 +217,11 @@ function createWalletClient(account: Address, provider: BrowserEthereumProvider)
   return createArenaClient(account, provider);
 }
 
-async function fetchRoomContractAddress(roomId: string) {
-  const client = createArenaClient();
-  const raw = await readContractWithRetry(() =>
-    client.readContract({
-      address: getConfiguredCoreAddress(),
-      functionName: "get_room_contract",
-      args: [roomId],
-      jsonSafeReturn: true,
-    }),
-  );
-
-  return asAddressString(raw) || EMPTY_ADDRESS;
-}
-
-async function fetchRegisteredRoomMode(roomId: string): Promise<ArenaMode | null> {
-  const client = createArenaClient();
-  const raw = await readContractWithRetry(() =>
-    client.readContract({
-      address: getConfiguredCoreAddress(),
-      functionName: "get_room_mode",
-      args: [roomId],
-      jsonSafeReturn: true,
-    }),
-  );
-
-  const mode = asString(raw);
-  return mode === "debate" || mode === "convince" || mode === "quiz" || mode === "riddle" ? mode : null;
-}
-
-async function fetchAllRegisteredRoomIds() {
-  const client = createArenaClient();
-  const rawIds = await readContractWithRetry(() =>
-    client.readContract({
-      address: getConfiguredCoreAddress(),
-      functionName: "get_room_ids",
-      args: [],
-      jsonSafeReturn: true,
-    }),
-  );
-
-  if (!Array.isArray(rawIds)) {
-    return [] as string[];
-  }
-
-  return rawIds.map((value) => asString(value).trim()).filter(Boolean);
-}
-
-async function fetchCoreRoomIndex() {
-  const roomIds = await fetchAllRegisteredRoomIds();
-  const indexedRooms: { roomId: string; mode: ArenaMode; address: Address }[] = [];
-
-  for (const roomId of roomIds) {
-    const mode = await fetchRegisteredRoomMode(roomId);
-    if (!mode) {
-      continue;
-    }
-
-    const address = await fetchRoomContractAddress(roomId);
-    if (isEmptyAddress(address)) {
-      continue;
-    }
-
-    indexedRooms.push({ roomId, mode, address: address as Address });
-  }
-
-  return indexedRooms;
-}
-
 async function fetchRoomByTarget(target: { address: Address; mode: ArenaMode }, roomId: string) {
-  const client = createArenaClient();
   let raw: unknown;
 
   try {
-    raw = await client.readContract({
+    raw = await readContractWithDebug({
       address: target.address,
       functionName: "get_room",
       args: [roomId],
@@ -356,23 +237,15 @@ async function fetchRoomByTarget(target: { address: Address; mode: ArenaMode }, 
   return parseRoom(target.mode, raw);
 }
 
-async function resolveRoomTarget(mode: ArenaMode, roomId: string) {
-  if (!arenaEnv.hasVdtCoreAddress) {
-    return {
-      address: getLegacyConfiguredContractAddress(mode),
-      mode,
-    };
-  }
-
-  const roomAddress = await fetchRoomContractAddress(roomId);
-  if (isEmptyAddress(roomAddress)) {
+async function resolveRoomTarget(mode: ArenaMode) {
+  const address = getLegacyConfiguredContractAddress(mode);
+  if (isEmptyAddress(address)) {
     return null;
   }
 
-  const resolvedMode = (await fetchRegisteredRoomMode(roomId)) ?? mode;
   return {
-    address: roomAddress as Address,
-    mode: resolvedMode,
+    address,
+    mode,
   };
 }
 
@@ -382,25 +255,12 @@ async function waitForReceipt(
   hash: unknown,
   status = TransactionStatus.ACCEPTED,
 ) {
-  const normalizedHash = asString(hash);
-
-  if (!normalizedHash) {
-    throw new Error("The transaction did not return a valid hash.");
-  }
-
-  const client = createWalletClient(account, provider);
-
-  return client.waitForTransactionReceipt({
-    hash: normalizedHash as never,
-    status,
-    interval: 3_000,
-    retries: 90,
-  });
+  return waitForConsensusReceipt(account, provider, hash, status);
 }
 
 export async function fetchContractSchema(mode: ArenaMode) {
   const client = createArenaClient();
-  const address = arenaEnv.hasVdtCoreAddress ? getConfiguredCoreAddress() : getLegacyConfiguredContractAddress(mode);
+  const address = getLegacyConfiguredContractAddress(mode);
 
   try {
     return await client.getContractSchema(address);
@@ -412,7 +272,7 @@ export async function fetchContractSchema(mode: ArenaMode) {
       throw error;
     }
 
-    await client.readContract({
+    await readContractWithDebug({
       address,
       functionName: "get_room_ids",
       args: [],
@@ -424,7 +284,7 @@ export async function fetchContractSchema(mode: ArenaMode) {
 }
 
 export async function fetchRoom(mode: ArenaMode, roomId: string) {
-  const target = await resolveRoomTarget(mode, roomId);
+  const target = await resolveRoomTarget(mode);
   if (!target) {
     return null;
   }
@@ -445,7 +305,7 @@ export async function waitForRoom(mode: ArenaMode, roomId: string, retries = 50,
   }
 
   throw new Error(
-    "The room transaction was accepted, but Studionet has not exposed the child room contract yet. Try again in a little while.",
+    "The room transaction was accepted, but the game contract has not exposed it yet. Try again in a little while.",
   );
 }
 
@@ -472,48 +332,28 @@ export async function waitForRoomState(
 }
 
 export async function fetchRooms(mode: ArenaMode) {
-  if (!arenaEnv.hasVdtCoreAddress) {
-    const client = createArenaClient();
-    const rawIds = await client.readContract({
-      address: getLegacyConfiguredContractAddress(mode),
-      functionName: "get_room_ids",
-      args: [],
-      jsonSafeReturn: true,
-    });
+  const rawIds = await readContractWithDebug({
+    address: getLegacyConfiguredContractAddress(mode),
+    functionName: "get_room_ids",
+    args: [],
+    jsonSafeReturn: true,
+  });
 
-    if (!Array.isArray(rawIds)) {
-      return [] as ArenaRoom[];
-    }
-
-    const rooms = await Promise.all(
-      rawIds
-        .map((value) => asString(value).trim())
-        .filter(Boolean)
-        .map((roomId) => fetchRoom(mode, roomId).catch(() => null)),
-    );
-
-    return rooms.filter(Boolean) as ArenaRoom[];
+  if (!Array.isArray(rawIds)) {
+    return [] as ArenaRoom[];
   }
 
-  const roomIds = await fetchAllRegisteredRoomIds();
-  const modes = await Promise.all(roomIds.map((roomId) => fetchRegisteredRoomMode(roomId)));
-  const filteredRoomIds = roomIds.filter((_, index) => modes[index] === mode);
-  const rooms = await Promise.all(filteredRoomIds.map((roomId) => fetchRoom(mode, roomId)));
+  const rooms = await Promise.all(
+    rawIds
+      .map((value) => asString(value).trim())
+      .filter(Boolean)
+      .map((roomId) => fetchRoom(mode, roomId).catch(() => null)),
+  );
+
   return rooms.filter(Boolean) as ArenaRoom[];
 }
 
 export async function fetchAllRooms(modes: ArenaMode[]) {
-  if (arenaEnv.hasVdtCoreAddress) {
-    const indexedRooms = await fetchCoreRoomIndex();
-    const rooms = await Promise.all(
-      indexedRooms
-        .filter((entry) => modes.includes(entry.mode))
-        .map((entry) => fetchRoomByTarget({ address: entry.address, mode: entry.mode }, entry.roomId).catch(() => null)),
-    );
-
-    return rooms.filter(Boolean) as ArenaRoom[];
-  }
-
   const rooms = await Promise.all(modes.map((mode) => fetchRooms(mode)));
   return rooms.flat();
 }
@@ -525,23 +365,23 @@ export async function createRoom(
   room: {
     roomId: string;
     category: string;
+    argueStyle?: ArgueStyle;
     profileAddress?: string | null;
   },
 ) {
   const client = createWalletClient(account, provider);
-  const args = arenaEnv.hasVdtCoreAddress
-    ? [mode, room.roomId, room.category, room.profileAddress ?? EMPTY_ADDRESS]
-    : room.profileAddress && arenaEnv.hasProfileFactoryAddress
-      ? [room.roomId, room.category, room.profileAddress]
-      : [room.roomId, room.category];
   const hash = await writeContractWithRetry(client, {
-    address: arenaEnv.hasVdtCoreAddress ? getConfiguredCoreAddress() : getLegacyConfiguredContractAddress(mode),
+    address: getLegacyConfiguredContractAddress(mode),
     functionName: "create_room",
-    args,
+    args:
+      mode === "argue"
+        ? [room.roomId, room.category, room.profileAddress ?? EMPTY_ADDRESS, room.argueStyle ?? "debate"]
+        : [room.roomId, room.category, room.profileAddress ?? EMPTY_ADDRESS],
     value: 0n,
   });
 
-  return waitForReceipt(account, provider, hash);
+  void waitForReceipt(account, provider, hash, TransactionStatus.ACCEPTED).catch(() => undefined);
+  return hash;
 }
 
 export async function registerLocalProfile(
@@ -577,11 +417,12 @@ export async function joinRoom(
   profileAddress?: string | null,
 ) {
   const client = createWalletClient(account, provider);
-  const target = await resolveRoomTarget(mode, roomId);
+  const target = await resolveRoomTarget(mode);
   if (!target) {
     throw new Error("Room does not exist.");
   }
-  const args = profileAddress && arenaEnv.hasProfileFactoryAddress ? [roomId, profileAddress] : [roomId];
+  const args =
+    profileAddress && arenaEnv.hasVdtCoreAddress ? [roomId, profileAddress] : [roomId];
   const hash = await writeContractWithRetry(client, {
     address: target.address,
     functionName: "join_room",
@@ -589,7 +430,30 @@ export async function joinRoom(
     value: 0n,
   });
 
-  return waitForReceipt(account, provider, hash);
+  void waitForReceipt(account, provider, hash).catch(() => undefined);
+  return hash;
+}
+
+export async function startRoom(
+  mode: ArenaMode,
+  account: Address,
+  provider: BrowserEthereumProvider,
+  roomId: string,
+) {
+  const client = createWalletClient(account, provider);
+  const target = await resolveRoomTarget(mode);
+  if (!target) {
+    throw new Error("Room does not exist.");
+  }
+  const hash = await writeContractWithRetry(client, {
+    address: target.address,
+    functionName: "start_room",
+    args: [roomId],
+    value: 0n,
+  });
+
+  void waitForReceipt(account, provider, hash).catch(() => undefined);
+  return hash;
 }
 
 export async function submitEntry(
@@ -600,7 +464,7 @@ export async function submitEntry(
   submission: string,
 ) {
   const client = createWalletClient(account, provider);
-  const target = await resolveRoomTarget(mode, roomId);
+  const target = await resolveRoomTarget(mode);
   if (!target) {
     throw new Error("Room does not exist.");
   }
@@ -611,7 +475,8 @@ export async function submitEntry(
     value: 0n,
   });
 
-  return waitForReceipt(account, provider, hash);
+  void waitForReceipt(account, provider, hash).catch(() => undefined);
+  return hash;
 }
 
 export async function resolveRoom(
@@ -621,7 +486,7 @@ export async function resolveRoom(
   roomId: string,
 ) {
   const client = createWalletClient(account, provider);
-  const target = await resolveRoomTarget(mode, roomId);
+  const target = await resolveRoomTarget(mode);
   if (!target) {
     throw new Error("Room does not exist.");
   }
@@ -632,7 +497,8 @@ export async function resolveRoom(
     value: 0n,
   });
 
-  return waitForReceipt(account, provider, hash, TransactionStatus.FINALIZED);
+  void waitForReceipt(account, provider, hash, TransactionStatus.FINALIZED).catch(() => undefined);
+  return hash;
 }
 
 export async function forfeitRoom(
@@ -642,7 +508,7 @@ export async function forfeitRoom(
   roomId: string,
 ) {
   const client = createWalletClient(account, provider);
-  const target = await resolveRoomTarget(mode, roomId);
+  const target = await resolveRoomTarget(mode);
   if (!target) {
     throw new Error("Room does not exist.");
   }
@@ -653,121 +519,8 @@ export async function forfeitRoom(
     value: 0n,
   });
 
-  return waitForReceipt(account, provider, hash, TransactionStatus.FINALIZED);
-}
-
-export async function fetchQuizPlayerState(roomId: string, player: Address) {
-  const target = await resolveRoomTarget("quiz", roomId);
-  if (!target) {
-    throw new Error("Room does not exist.");
-  }
-  const client = createArenaClient();
-  const raw = await client.readContract({
-    address: target.address,
-    functionName: "get_player_state",
-    args: [roomId, player],
-    jsonSafeReturn: true,
-  });
-
-  return parseQuizPlayerState(raw);
-}
-
-export async function fetchQuizQuestion(roomId: string) {
-  const target = await resolveRoomTarget("quiz", roomId);
-  if (!target) {
-    throw new Error("Room does not exist.");
-  }
-  const client = createArenaClient();
-  const raw = await client.readContract({
-    address: target.address,
-    functionName: "get_current_question",
-    args: [roomId],
-    jsonSafeReturn: true,
-  });
-
-  return parseQuizQuestionState(raw);
-}
-
-export async function acceptQuizRoom(
-  account: Address,
-  provider: BrowserEthereumProvider,
-  roomId: string,
-) {
-  const client = createWalletClient(account, provider);
-  const target = await resolveRoomTarget("quiz", roomId);
-  if (!target) {
-    throw new Error("Room does not exist.");
-  }
-  const hash = await writeContractWithRetry(client, {
-    address: target.address,
-    functionName: "accept_room",
-    args: [roomId],
-    value: 0n,
-  });
-
-  return waitForReceipt(account, provider, hash);
-}
-
-export async function startQuiz(
-  account: Address,
-  provider: BrowserEthereumProvider,
-  roomId: string,
-) {
-  const client = createWalletClient(account, provider);
-  const target = await resolveRoomTarget("quiz", roomId);
-  if (!target) {
-    throw new Error("Room does not exist.");
-  }
-  const hash = await writeContractWithRetry(client, {
-    address: target.address,
-    functionName: "start_quiz",
-    args: [roomId],
-    value: 0n,
-  });
-
-  return waitForReceipt(account, provider, hash, TransactionStatus.FINALIZED);
-}
-
-export async function readyQuiz(
-  account: Address,
-  provider: BrowserEthereumProvider,
-  roomId: string,
-) {
-  const client = createWalletClient(account, provider);
-  const target = await resolveRoomTarget("quiz", roomId);
-  if (!target) {
-    throw new Error("Room does not exist.");
-  }
-  const hash = await writeContractWithRetry(client, {
-    address: target.address,
-    functionName: "ready_up",
-    args: [roomId],
-    value: 0n,
-  });
-
-  return waitForReceipt(account, provider, hash);
-}
-
-export async function submitQuizAnswer(
-  account: Address,
-  provider: BrowserEthereumProvider,
-  roomId: string,
-  questionIndex: number,
-  optionIndex: number,
-) {
-  const client = createWalletClient(account, provider);
-  const target = await resolveRoomTarget("quiz", roomId);
-  if (!target) {
-    throw new Error("Room does not exist.");
-  }
-  const hash = await writeContractWithRetry(client, {
-    address: target.address,
-    functionName: "submit_entry",
-    args: [roomId, questionIndex, optionIndex],
-    value: 0n,
-  });
-
-  return waitForReceipt(account, provider, hash);
+  void waitForReceipt(account, provider, hash, TransactionStatus.FINALIZED).catch(() => undefined);
+  return hash;
 }
 
 export function isEmptyAddress(address: string) {

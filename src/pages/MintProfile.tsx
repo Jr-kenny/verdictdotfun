@@ -25,17 +25,17 @@ const MintProfile = () => {
   const [name, setName] = useState("");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { walletAddress, walletReady, provider, ensureArenaNetwork, profileFactoryConfigured } = useArena();
+  const { walletAddress, walletReady, provider, ensureArenaNetwork, coreContractConfigured } = useArena();
 
   const profileQuery = useQuery({
     queryKey: ["profile", walletAddress],
     queryFn: () => fetchArenaProfile(walletAddress!),
-    enabled: Boolean(walletAddress) && profileFactoryConfigured,
+    enabled: Boolean(walletAddress) && coreContractConfigured,
   });
   const localProfileQuery = useQuery({
     queryKey: getLocalProfileQueryKey(walletAddress),
     queryFn: () => fetchStoredLocalProfileName(walletAddress),
-    enabled: Boolean(walletAddress) && !profileFactoryConfigured,
+    enabled: Boolean(walletAddress) && !coreContractConfigured,
   });
 
   const createProfileMutation = useMutation({
@@ -48,7 +48,7 @@ const MintProfile = () => {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["profile", walletAddress] });
-      toast.success("Profile created on Studionet.");
+      toast.success("Profile created on VerdictDotFun.");
       navigate("/lobby");
     },
     onError: (error) => {
@@ -66,11 +66,11 @@ const MintProfile = () => {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: getLocalProfileQueryKey(walletAddress) });
-      toast.success("Studio alias saved.");
+      toast.success("Local alias saved.");
       navigate("/lobby");
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Could not save your studio alias.");
+      toast.error(error instanceof Error ? error.message : "Could not save your local alias.");
     },
   });
 
@@ -94,25 +94,25 @@ const MintProfile = () => {
   if (profileQuery.data) {
     return <Navigate to="/lobby" replace />;
   }
-  if (!profileFactoryConfigured && localProfileQuery.data) {
+  if (!coreContractConfigured && localProfileQuery.data) {
     return <Navigate to="/lobby" replace />;
   }
 
   const truncatedWallet = `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
-  const nameLabel = profileFactoryConfigured ? "Profile Name" : "Studio Alias";
-  const pageTitle = profileFactoryConfigured ? "Create Your Transferable Profile" : "Create Your Studio Alias";
-  const pageCopy = profileFactoryConfigured
-    ? "Create your Studionet profile contract. It carries your rank, XP, and name, and can be transferred to a new wallet later."
-    : "Save a local alias for this wallet so you can still test the game contracts when the profile factory is not configured.";
-  const actionLabel = profileFactoryConfigured ? "Create Profile & Enter" : "Save Alias & Enter";
-  const isSubmitting = profileFactoryConfigured ? createProfileMutation.isPending : createLocalProfileMutation.isPending;
-  const previewRankLabel = profileFactoryConfigured ? "Bronze 1" : "Studionet";
-  const footerLabel = profileFactoryConfigured
+  const nameLabel = coreContractConfigured ? "Profile Name" : "Local Alias";
+  const pageTitle = coreContractConfigured ? "Create Your VerdictDotFun Profile" : "Create Your Local Alias";
+  const pageCopy = coreContractConfigured
+    ? "Create your permanent VerdictDotFun profile on GenLayer. It anchors your handle, rank, XP, and season record."
+    : "Save a local alias for this wallet so you can still test the game contracts when the core contract is not configured.";
+  const actionLabel = coreContractConfigured ? "Create Profile & Enter" : "Save Alias & Enter";
+  const isSubmitting = coreContractConfigured ? createProfileMutation.isPending : createLocalProfileMutation.isPending;
+  const previewRankLabel = coreContractConfigured ? "Bronze 1" : "Local Test";
+  const footerLabel = coreContractConfigured
     ? "Stored on the active GenLayer network"
     : "Stored locally in this browser for the connected wallet";
 
   const handlePrimaryAction = () => {
-    if (profileFactoryConfigured) {
+    if (coreContractConfigured) {
       createProfileMutation.mutate();
       return;
     }
@@ -140,7 +140,7 @@ const MintProfile = () => {
                   <Input
                     value={name}
                     onChange={(e) => setName(e.target.value.slice(0, 24))}
-                    placeholder={profileFactoryConfigured ? "Enter your profile name" : "Enter your studio alias"}
+                    placeholder={coreContractConfigured ? "Enter your profile name" : "Enter your local alias"}
                     className="bg-card border-border text-foreground"
                     maxLength={24}
                   />
@@ -153,7 +153,7 @@ const MintProfile = () => {
                     onClick={handlePrimaryAction}
                     disabled={isSubmitting || name.trim().length < 3}
                   >
-                    {isSubmitting ? (profileFactoryConfigured ? "Creating..." : "Saving...") : actionLabel}
+                    {isSubmitting ? (coreContractConfigured ? "Creating..." : "Saving...") : actionLabel}
                   </Button>
                 </motion.div>
                 <p className="text-xs text-muted-foreground text-center">{footerLabel}</p>
@@ -188,12 +188,12 @@ const MintProfile = () => {
                 <p className="text-xs text-muted-foreground font-mono mb-3">{truncatedWallet}</p>
                 <div className="flex justify-between text-sm">
                   <div>
-                    <span className="text-muted-foreground">{profileFactoryConfigured ? "Rank" : "Mode"}</span>
+                    <span className="text-muted-foreground">{coreContractConfigured ? "Rank" : "Mode"}</span>
                     <p className="font-heading font-bold">{previewRankLabel}</p>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">{profileFactoryConfigured ? "XP" : "Wallet"}</span>
-                    <p className="font-heading font-bold">{profileFactoryConfigured ? "0 / 500" : "Ready"}</p>
+                    <span className="text-muted-foreground">{coreContractConfigured ? "XP" : "Wallet"}</span>
+                    <p className="font-heading font-bold">{coreContractConfigured ? "0 / 500" : "Ready"}</p>
                   </div>
                 </div>
               </motion.div>

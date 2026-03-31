@@ -3,7 +3,7 @@ ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 def _mock_riddle_pack(direct_vm, room_id: str, category: str = "Tech"):
     direct_vm.mock_llm(
-        rf"(?s).*Generate a five-round riddle pack.*Category: {category}.*{room_id}.*",
+        rf"(?s).*Generate a 3-round riddle pack.*Category: {category}.*{room_id}.*",
         {
             "riddles": [
                 {
@@ -21,22 +21,12 @@ def _mock_riddle_pack(direct_vm, room_id: str, category: str = "Tech"):
                     "answer": "ceiling fan",
                     "aliases": ["fan"],
                 },
-                {
-                    "prompt": "I sit beside a monitor, translate hand movement into pointer motion, and usually click twice. What am I?",
-                    "answer": "computer mouse",
-                    "aliases": ["mouse"],
-                },
-                {
-                    "prompt": "I print ink onto paper in homes and offices, but I am not a photocopier. What am I?",
-                    "answer": "printer",
-                    "aliases": ["inkjet printer", "laser printer"],
-                },
             ]
         },
     )
 
 
-def test_riddle_match_runs_for_five_rounds_and_first_to_three_wins(direct_vm, direct_deploy, direct_alice, direct_bob):
+def test_riddle_match_runs_for_three_rounds_and_first_to_three_wins(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = direct_deploy("contracts/riddle_game.py", ZERO_ADDRESS)
     _mock_riddle_pack(direct_vm, "ROOM06")
 
@@ -45,7 +35,7 @@ def test_riddle_match_runs_for_five_rounds_and_first_to_three_wins(direct_vm, di
     contract.create_room("ROOM06", "Tech")
 
     room = contract.get_room("ROOM06")
-    assert room.question_count == 5
+    assert room.question_count == 3
     assert room.current_question_index == 1
 
     direct_vm.sender = direct_bob
@@ -56,6 +46,7 @@ def test_riddle_match_runs_for_five_rounds_and_first_to_three_wins(direct_vm, di
     contract.submit_entry("ROOM06", "smartphone")
     direct_vm.sender = direct_bob
     contract.submit_entry("ROOM06", "tablet")
+    contract.resolve_room("ROOM06")
 
     room = contract.get_room("ROOM06")
     assert room.owner_score == 1
@@ -63,12 +54,13 @@ def test_riddle_match_runs_for_five_rounds_and_first_to_three_wins(direct_vm, di
     assert room.prompt.startswith("I hold hot drinks")
 
     direct_vm.sender = direct_alice
-    contract.submit_entry("ROOM06", "mug")
+    contract.submit_entry("ROOM06", "thermos")
     direct_vm.sender = direct_bob
     contract.submit_entry("ROOM06", "cup")
+    contract.resolve_room("ROOM06")
 
     room = contract.get_room("ROOM06")
-    assert room.owner_score == 1
+    assert room.owner_score == 2
     assert room.opponent_score == 0
     assert room.current_question_index == 3
     assert room.revealed_answer == "thermos"
@@ -77,32 +69,13 @@ def test_riddle_match_runs_for_five_rounds_and_first_to_three_wins(direct_vm, di
     contract.submit_entry("ROOM06", "ceiling fan")
     direct_vm.sender = direct_bob
     contract.submit_entry("ROOM06", "fan")
-
-    room = contract.get_room("ROOM06")
-    assert room.owner_score == 2
-    assert room.opponent_score == 0
-    assert room.current_question_index == 4
-
-    direct_vm.sender = direct_alice
-    contract.submit_entry("ROOM06", "keyboard")
-    direct_vm.sender = direct_bob
-    contract.submit_entry("ROOM06", "mouse")
-
-    room = contract.get_room("ROOM06")
-    assert room.owner_score == 2
-    assert room.opponent_score == 1
-    assert room.current_question_index == 5
-
-    direct_vm.sender = direct_alice
-    contract.submit_entry("ROOM06", "printer")
-    direct_vm.sender = direct_bob
-    contract.submit_entry("ROOM06", "scanner")
+    contract.resolve_room("ROOM06")
 
     resolved = contract.get_room("ROOM06")
     assert resolved.status == "resolved"
     assert resolved.winner == resolved.owner
     assert resolved.owner_score == 3
-    assert resolved.opponent_score == 1
+    assert resolved.opponent_score == 0
     assert "solved three riddles first" in resolved.verdict_reasoning
 
 
@@ -117,7 +90,7 @@ def test_riddle_pack_generation_uses_the_selected_category(direct_vm, direct_dep
     room = contract.get_room("ROOM07")
     assert room.prompt
     assert room.category == "Nature"
-    assert room.question_count == 5
+    assert room.question_count == 3
 
 
 def test_riddle_forfeit_resolves_the_other_player_as_winner(direct_vm, direct_deploy, direct_alice, direct_bob):

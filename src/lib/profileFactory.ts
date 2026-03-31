@@ -2,6 +2,8 @@ import { TransactionStatus } from "genlayer-js/types";
 import type { Address } from "viem";
 import { arenaEnv } from "@/lib/env";
 import { createArenaClient } from "@/lib/genlayer";
+import { readContractWithDebug } from "@/lib/genlayerRead";
+import { waitForConsensusReceipt } from "@/lib/genlayerTransactions";
 import type { BrowserEthereumProvider } from "@/lib/ethereum";
 import type { ArenaProfile, LeaderboardEntry } from "@/types/arena";
 
@@ -71,9 +73,9 @@ function asBoolean(value: unknown): boolean {
   return false;
 }
 
-function getConfiguredFactoryAddress(): Address {
+function getConfiguredCoreAddress(): Address {
   if (!arenaEnv.vdtCoreAddress) {
-    throw new Error("Missing VITE_VDT_CORE_CONTRACT_ADDRESS.");
+    throw new Error("Missing VerdictDotFun core contract address.");
   }
 
   return arenaEnv.vdtCoreAddress as Address;
@@ -115,19 +117,7 @@ async function waitForReceipt(
   hash: unknown,
   status = TransactionStatus.ACCEPTED,
 ) {
-  const client = createArenaClient(account, provider);
-  const normalizedHash = asString(hash);
-
-  if (!normalizedHash) {
-    throw new Error("The transaction did not return a valid hash.");
-  }
-
-  return client.waitForTransactionReceipt({
-    hash: normalizedHash as never,
-    status,
-    interval: 3_000,
-    retries: 90,
-  });
+  return waitForConsensusReceipt(account, provider, hash, status);
 }
 
 export async function fetchArenaProfile(ownerAddress: Address): Promise<ArenaProfile | null> {
@@ -135,9 +125,8 @@ export async function fetchArenaProfile(ownerAddress: Address): Promise<ArenaPro
     return null;
   }
 
-  const client = createArenaClient();
-  const raw = await client.readContract({
-    address: getConfiguredFactoryAddress(),
+  const raw = await readContractWithDebug({
+    address: getConfiguredCoreAddress(),
     functionName: "get_profile",
     args: [ownerAddress],
     jsonSafeReturn: true,
@@ -153,29 +142,13 @@ export async function createArenaProfile(
 ) {
   const client = createArenaClient(account, provider);
   const hash = await client.writeContract({
-    address: getConfiguredFactoryAddress(),
+    address: getConfiguredCoreAddress(),
     functionName: "create_profile",
     args: [handle.trim()],
     value: 0n,
   });
 
   return waitForReceipt(account, provider, hash);
-}
-
-export async function transferArenaProfile(
-  account: Address,
-  provider: BrowserEthereumProvider,
-  newOwner: string,
-) {
-  const client = createArenaClient(account, provider);
-  const hash = await client.writeContract({
-    address: getConfiguredFactoryAddress(),
-    functionName: "transfer_profile",
-    args: [newOwner.trim()],
-    value: 0n,
-  });
-
-  return waitForReceipt(account, provider, hash, TransactionStatus.FINALIZED);
 }
 
 export async function renameArenaProfile(
@@ -186,9 +159,9 @@ export async function renameArenaProfile(
 ) {
   const client = createArenaClient(account, provider);
   const hash = await client.writeContract({
-    address: profileAddress,
+    address: getConfiguredCoreAddress(),
     functionName: "set_handle",
-    args: [handle.trim()],
+    args: [profileAddress, handle.trim()],
     value: 0n,
   });
 
@@ -200,9 +173,8 @@ export async function fetchLeaderboard(limit = 25): Promise<LeaderboardEntry[]> 
     return [];
   }
 
-  const client = createArenaClient();
-  const rawProfiles = await client.readContract({
-    address: getConfiguredFactoryAddress(),
+  const rawProfiles = await readContractWithDebug({
+    address: getConfiguredCoreAddress(),
     functionName: "get_leaderboard",
     args: [limit],
     jsonSafeReturn: true,
@@ -214,8 +186,8 @@ export async function fetchLeaderboard(limit = 25): Promise<LeaderboardEntry[]> 
 
   const entries = await Promise.all(
     rawProfiles.map(async (profileAddress, index) => {
-      const rawProfile = await client.readContract({
-        address: getConfiguredFactoryAddress(),
+      const rawProfile = await readContractWithDebug({
+        address: getConfiguredCoreAddress(),
         functionName: "get_profile_by_address",
         args: [asString(profileAddress)],
         jsonSafeReturn: true,

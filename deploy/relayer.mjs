@@ -8,9 +8,14 @@ import { TransactionStatus } from "genlayer-js/types";
 import { Contract, JsonRpcProvider, Wallet } from "ethers";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const chainKey = process.env.GENLAYER_CHAIN ?? "studionet";
+const chainKey = process.env.GENLAYER_CHAIN ?? "testnetBradbury";
 const privateKey = process.env.GENLAYER_DEPLOYER_PRIVATE_KEY;
-const vdtCoreAddress = process.env.VDT_CORE_CONTRACT_ADDRESS ?? process.env.VITE_VDT_CORE_CONTRACT_ADDRESS ?? "";
+const vdtCoreAddress =
+  process.env.VERDICTDOTFUN_CONTRACT_ADDRESS ??
+  process.env.VITE_VERDICTDOTFUN_CONTRACT_ADDRESS ??
+  process.env.VDT_CORE_CONTRACT_ADDRESS ??
+  process.env.VITE_VDT_CORE_CONTRACT_ADDRESS ??
+  "";
 const profileFactoryAddress = vdtCoreAddress;
 const runOnce = process.env.RELAYER_RUN_ONCE === "1";
 const pollIntervalMs = Number(process.env.RELAYER_POLL_INTERVAL_MS ?? "15000");
@@ -46,19 +51,24 @@ if (!(chainKey in chains)) {
 }
 
 const modeAddresses = Object.entries({
-  debate: process.env.DEBATE_CONTRACT_ADDRESS ?? process.env.VITE_DEBATE_CONTRACT_ADDRESS,
-  convince:
-    process.env.CONVINCE_CONTRACT_ADDRESS ??
-    process.env.VITE_CONVINCE_CONTRACT_ADDRESS ??
-    process.env.VITE_CONVINCE_ME_CONTRACT_ADDRESS,
-  quiz: process.env.QUIZ_CONTRACT_ADDRESS ?? process.env.VITE_QUIZ_CONTRACT_ADDRESS,
-  riddle: process.env.RIDDLE_CONTRACT_ADDRESS ?? process.env.VITE_RIDDLE_CONTRACT_ADDRESS,
+  argue:
+    process.env.VERDICTDOTFUN_ARGUE_CONTRACT_ADDRESS ??
+    process.env.VITE_VERDICTDOTFUN_ARGUE_CONTRACT_ADDRESS ??
+    process.env.ARGUE_CONTRACT_ADDRESS ??
+    process.env.VDT_ARGUE_CONTRACT_ADDRESS ??
+    process.env.VITE_VDT_ARGUE_CONTRACT_ADDRESS,
+  riddle:
+    process.env.VERDICTDOTFUN_RIDDLE_CONTRACT_ADDRESS ??
+    process.env.VITE_VERDICTDOTFUN_RIDDLE_CONTRACT_ADDRESS ??
+    process.env.RIDDLE_CONTRACT_ADDRESS ??
+    process.env.VDT_RIDDLE_CONTRACT_ADDRESS ??
+    process.env.VITE_VDT_RIDDLE_CONTRACT_ADDRESS,
 })
   .filter(([, address]) => !!address)
   .filter(([mode]) => modeFilter.length === 0 || modeFilter.includes(mode));
 
 if (modeAddresses.length === 0 && !vdtCoreAddress) {
-  throw new Error("No VDTCore or legacy game contracts are configured for the relayer.");
+  throw new Error("No VerdictDotFun core or game contracts are configured for the relayer.");
 }
 
 const client = createClient({
@@ -189,11 +199,6 @@ function roomIsReadyToResolve(mode, room) {
   const opponent = normalizeAddress(room.opponent);
   if (!owner || !opponent || opponent.endsWith("0000000000000000000000000000000000000000")) {
     return false;
-  }
-
-  if (mode === "quiz") {
-    const questionCount = asNumber(room.question_count);
-    return questionCount > 0 && asNumber(room.current_question_index) > questionCount;
   }
 
   if (mode === "riddle") {
@@ -513,12 +518,12 @@ async function syncVerdictNfts(state) {
 }
 
 async function runCycle(state) {
-  if (vdtCoreAddress) {
-    await processCoreRooms(state);
-  } else {
+  if (modeAddresses.length > 0) {
     for (const [mode, address] of modeAddresses) {
       await processMode(mode, address, state);
     }
+  } else if (vdtCoreAddress) {
+    await processCoreRooms(state);
   }
 
   await syncVerdictNfts(state);

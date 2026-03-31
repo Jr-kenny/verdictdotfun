@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { useArena } from "@/context/ArenaContext";
 import { arenaEnv } from "@/lib/env";
 import { fetchStoredLocalProfileName, getLocalProfileQueryKey } from "@/lib/localProfile";
-import { fetchArenaProfile, renameArenaProfile, transferArenaProfile } from "@/lib/profileFactory";
+import { fetchArenaProfile, renameArenaProfile } from "@/lib/profileFactory";
 import { fetchVerdictBadge, unlinkVerdictBadge } from "@/lib/verdictNft";
 
 const Header = ({ centered = false }: { centered?: boolean }) => {
@@ -23,16 +23,15 @@ const Header = ({ centered = false }: { centered?: boolean }) => {
     walletAddress,
     provider,
     disconnectWallet,
-    connectWallet,
+    openWalletModal,
     ensureArenaNetwork,
     ensureProfileNetwork,
-    profileFactoryConfigured,
+    coreContractConfigured,
   } = useArena();
   const location = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [nextHandle, setNextHandle] = useState("");
-  const [transferAddress, setTransferAddress] = useState("");
 
   const profileQuery = useQuery({
     queryKey: ["profile", walletAddress],
@@ -53,7 +52,7 @@ const Header = ({ centered = false }: { centered?: boolean }) => {
   const profile = profileQuery.data;
   const localProfileName = localProfileQuery.data;
   const verdictBadge = verdictBadgeQuery.data;
-  const displayName = profile?.name ?? (!profileFactoryConfigured ? localProfileName : null) ?? "Profile";
+  const displayName = profile?.name ?? (!coreContractConfigured ? localProfileName : null) ?? "Profile";
   const showLeaderboardLink = location.pathname === "/lobby";
 
   const renameMutation = useMutation({
@@ -75,25 +74,6 @@ const Header = ({ centered = false }: { centered?: boolean }) => {
     },
   });
 
-  const transferMutation = useMutation({
-    mutationFn: async () => {
-      if (!walletAddress || !provider) {
-        throw new Error("Connect a wallet before transferring the profile.");
-      }
-
-      await ensureArenaNetwork();
-      return transferArenaProfile(walletAddress, provider, transferAddress);
-    },
-    onSuccess: async () => {
-      setTransferAddress("");
-      await queryClient.invalidateQueries({ queryKey: ["profile", walletAddress] });
-      toast.success("Profile transferred.");
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Could not transfer the profile.");
-    },
-  });
-
   const unlinkVerdictMutation = useMutation({
     mutationFn: async () => {
       if (!walletAddress || !provider || !verdictBadge?.tokenId) {
@@ -105,17 +85,21 @@ const Header = ({ centered = false }: { centered?: boolean }) => {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["verdict-badge", profile?.profileAddress] });
-      toast.success("Verdict NFT unlinked. Future profile transfers will no longer move it.");
+      toast.success("Verdict NFT unlinked from this permanent profile.");
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "Could not unlink the Verdict NFT.");
     },
   });
 
-  const handleDisconnect = () => {
-    disconnectWallet();
-    toast.success("Wallet disconnected.");
-    navigate("/");
+  const handleDisconnect = async () => {
+    try {
+      await disconnectWallet();
+      toast.success("Wallet disconnected.");
+      navigate("/");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not disconnect the wallet.");
+    }
   };
 
   return (
@@ -149,7 +133,7 @@ const Header = ({ centered = false }: { centered?: boolean }) => {
               <DropdownMenuLabel className="px-3 py-2">
                 <div className="space-y-1">
                   <p className="font-heading text-base font-bold">
-                    {profile?.name || (!profileFactoryConfigured ? localProfileName : null) || (profileFactoryConfigured ? "No profile created" : "No studio alias")}
+                    {profile?.name || (!coreContractConfigured ? localProfileName : null) || (coreContractConfigured ? "No profile created" : "No local alias")}
                   </p>
                   <p className="text-xs font-mono text-muted-foreground">
                     {walletAddress}
@@ -231,28 +215,6 @@ const Header = ({ centered = false }: { centered?: boolean }) => {
                         {renameMutation.isPending ? "Updating..." : "Update Name"}
                       </Button>
                     </div>
-                    <div className="space-y-2">
-                      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Transfer</p>
-                      <Input
-                        value={transferAddress}
-                        onChange={(event) => setTransferAddress(event.target.value)}
-                        placeholder="New wallet address"
-                        className="bg-background/60"
-                      />
-                      <Button
-                        variant="secondary"
-                        className="w-full"
-                        disabled={transferMutation.isPending || transferAddress.trim().length < 42}
-                        onClick={() => transferMutation.mutate()}
-                      >
-                        {transferMutation.isPending ? "Transferring..." : "Transfer Profile"}
-                      </Button>
-                      {verdictBadge?.linked && (
-                        <p className="text-xs text-muted-foreground">
-                          Linked Verdict NFTs follow profile ownership automatically unless you unlink them first.
-                        </p>
-                      )}
-                    </div>
                     {verdictBadge?.linked && (
                       <div className="space-y-2">
                         <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Verdict NFT</p>
@@ -268,7 +230,7 @@ const Header = ({ centered = false }: { centered?: boolean }) => {
                     )}
                     <div className="space-y-2">
                       <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Wallet</p>
-                      <Button variant="secondary" className="w-full" onClick={handleDisconnect}>
+                      <Button variant="secondary" className="w-full" onClick={() => void handleDisconnect()}>
                         Disconnect Wallet
                       </Button>
                     </div>
@@ -277,13 +239,13 @@ const Header = ({ centered = false }: { centered?: boolean }) => {
               ) : (
                 <div className="space-y-3 p-3">
                   <div className="text-sm text-muted-foreground">
-                    {profileFactoryConfigured
-                      ? "Create your transferable profile to unlock your handle, rank, XP, and transfer controls."
+                    {coreContractConfigured
+                      ? "Create your permanent VerdictDotFun profile to unlock your handle, rank, and XP."
                       : localProfileName
-                        ? "Using a local studio alias for this wallet on the current browser."
-                        : "Create a studio alias before joining rooms or creating matches."}
+                        ? "Using a local test alias for this wallet on the current browser."
+                        : "Create a local alias before joining rooms or creating matches."}
                   </div>
-                  <Button variant="secondary" className="w-full" onClick={handleDisconnect}>
+                  <Button variant="secondary" className="w-full" onClick={() => void handleDisconnect()}>
                     Disconnect Wallet
                   </Button>
                 </div>
@@ -291,7 +253,7 @@ const Header = ({ centered = false }: { centered?: boolean }) => {
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
-          <Button variant="wallet" size="sm" onClick={() => void connectWallet()}>
+          <Button variant="wallet" size="sm" onClick={openWalletModal}>
             Connect Wallet
           </Button>
         )}

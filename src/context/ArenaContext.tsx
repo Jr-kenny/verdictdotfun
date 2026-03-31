@@ -1,19 +1,13 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useAppKit, useAppKitAccount, useAppKitNetwork, useAppKitProvider, useDisconnect } from "@reown/appkit/react";
+import type { Provider } from "@reown/appkit/react";
 import type { ContractSchema } from "genlayer-js/types";
-import type { Address } from "viem";
+import { getAddress, type Address } from "viem";
 import { arenaEnv } from "@/lib/env";
+import { ensureArenaWalletChain, ensureProfileWalletChain, type BrowserEthereumProvider } from "@/lib/ethereum";
 import { ARENA_MODES } from "@/lib/gameModes";
-import {
-  ensureArenaWalletChain,
-  ensureProfileWalletChain,
-  getBrowserProvider,
-  getConnectedWalletAddress,
-  getWalletChainId,
-  requestWalletAddress,
-  type BrowserEthereumProvider,
-} from "@/lib/ethereum";
-import { getArenaChain, getArenaChainHexId, getArenaEndpoint } from "@/lib/genlayer";
-import { getProfileChain, getProfileChainHexId, getProfileRpcUrl } from "@/lib/profileChain";
+import { getArenaChain, getArenaEndpoint } from "@/lib/genlayer";
+import { getProfileChain, getProfileRpcUrl } from "@/lib/profileChain";
 import { fetchContractSchema } from "@/lib/verdictArena";
 import type { ArenaMode } from "@/types/arena";
 
@@ -31,8 +25,9 @@ interface ArenaContextValue {
   walletAddress: Address | null;
   provider: BrowserEthereumProvider | null;
   walletReady: boolean;
+  openWalletModal: () => Promise<void>;
   connectWallet: () => Promise<void>;
-  disconnectWallet: () => void;
+  disconnectWallet: () => Promise<void>;
   ensureArenaNetwork: () => Promise<void>;
   ensureProfileNetwork: () => Promise<void>;
   walletChainId: string | null;
@@ -41,8 +36,8 @@ interface ArenaContextValue {
   gameContracts: Record<ArenaMode, GameContractState>;
   readyModes: ArenaMode[];
   configuredModes: ArenaMode[];
-  profileFactoryAddress: string | null;
-  profileFactoryConfigured: boolean;
+  coreContractAddress: string | null;
+  coreContractConfigured: boolean;
   chain: string;
   endpoint: string;
   profileChain: string;
@@ -52,158 +47,54 @@ interface ArenaContextValue {
 const ArenaContext = createContext<ArenaContextValue | null>(null);
 
 function buildInitialGameContracts(): Record<ArenaMode, GameContractState> {
-  if (arenaEnv.hasVdtCoreAddress) {
-    return {
-      debate: {
-        address: arenaEnv.vdtCoreAddress,
-        status: "checking",
-        error: null,
-        schema: null,
-      },
-      convince: {
-        address: arenaEnv.vdtCoreAddress,
-        status: "checking",
-        error: null,
-        schema: null,
-      },
-      quiz: {
-        address: arenaEnv.vdtCoreAddress,
-        status: "checking",
-        error: null,
-        schema: null,
-      },
-      riddle: {
-        address: arenaEnv.vdtCoreAddress,
-        status: "checking",
-        error: null,
-        schema: null,
-      },
-    };
-  }
-
   return {
-    debate: {
-      address: arenaEnv.contractAddresses.debate,
-      status: arenaEnv.contractAddresses.debate ? "checking" : "missing-config",
-      error: arenaEnv.contractAddresses.debate ? null : "Set VITE_DEBATE_CONTRACT_ADDRESS after deployment.",
-      schema: null,
-    },
-    convince: {
-      address: arenaEnv.contractAddresses.convince,
-      status: arenaEnv.contractAddresses.convince ? "checking" : "missing-config",
-      error: arenaEnv.contractAddresses.convince ? null : "Set VITE_CONVINCE_ME_CONTRACT_ADDRESS after deployment.",
-      schema: null,
-    },
-    quiz: {
-      address: arenaEnv.contractAddresses.quiz,
-      status: arenaEnv.contractAddresses.quiz ? "checking" : "missing-config",
-      error: arenaEnv.contractAddresses.quiz ? null : "Set VITE_QUIZ_CONTRACT_ADDRESS after deployment.",
+    argue: {
+      address: arenaEnv.contractAddresses.argue,
+      status: arenaEnv.contractAddresses.argue ? "checking" : "missing-config",
+      error: arenaEnv.contractAddresses.argue ? null : "Set VITE_VERDICTDOTFUN_ARGUE_CONTRACT_ADDRESS after deployment.",
       schema: null,
     },
     riddle: {
       address: arenaEnv.contractAddresses.riddle,
       status: arenaEnv.contractAddresses.riddle ? "checking" : "missing-config",
-      error: arenaEnv.contractAddresses.riddle ? null : "Set VITE_RIDDLE_CONTRACT_ADDRESS after deployment.",
+      error: arenaEnv.contractAddresses.riddle ? null : "Set VITE_VERDICTDOTFUN_RIDDLE_CONTRACT_ADDRESS after deployment.",
       schema: null,
     },
   };
 }
 
 export function ArenaProvider({ children }: { children: ReactNode }) {
-  const [provider, setProvider] = useState<BrowserEthereumProvider | null>(null);
-  const [providerReady, setProviderReady] = useState(false);
-  const [walletReady, setWalletReady] = useState(false);
-  const [walletAddress, setWalletAddress] = useState<Address | null>(null);
-  const [walletChainId, setWalletChainId] = useState<string | null>(null);
-  const [walletArenaStatus, setWalletArenaStatus] = useState<NetworkStatus>("unknown");
-  const [walletProfileStatus, setWalletProfileStatus] = useState<NetworkStatus>("unknown");
+  const { open } = useAppKit();
+  const { disconnect } = useDisconnect();
+  const { address, status } = useAppKitAccount({ namespace: "eip155" });
+  const { chainId } = useAppKitNetwork();
+  const { walletProvider } = useAppKitProvider<Provider>("eip155");
   const [gameContracts, setGameContracts] = useState<Record<ArenaMode, GameContractState>>(buildInitialGameContracts);
 
-  function updateWalletStatuses(chainId: string | null) {
-    if (!chainId) {
-      setWalletArenaStatus("unknown");
-      setWalletProfileStatus("unknown");
-      return;
+  const walletAddress = useMemo(() => {
+    if (!address) {
+      return null;
     }
 
-    const normalized = chainId.toLowerCase();
-    setWalletArenaStatus(normalized === getArenaChainHexId().toLowerCase() ? "ready" : "wrong-network");
-    setWalletProfileStatus(normalized === getProfileChainHexId().toLowerCase() ? "ready" : "wrong-network");
-  }
+    return getAddress(address as `0x${string}`);
+  }, [address]);
 
-  useEffect(() => {
-    const nextProvider = getBrowserProvider();
-    setProvider(nextProvider);
-    setProviderReady(true);
-  }, []);
-
-  useEffect(() => {
-    if (!providerReady) {
-      return;
-    }
-
-    let cancelled = false;
-
-    if (!provider) {
-      setWalletReady(true);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    void (async () => {
-      try {
-        const [connectedAddress, chainId] = await Promise.all([
-          getConnectedWalletAddress(provider),
-          getWalletChainId(provider),
-        ]);
-
-        if (!cancelled) {
-          setWalletAddress(connectedAddress);
-          setWalletChainId(chainId);
-          updateWalletStatuses(chainId);
-          setWalletReady(true);
-        }
-      } catch {
-        if (!cancelled) {
-          setWalletAddress(null);
-          setWalletChainId(null);
-          updateWalletStatuses(null);
-          setWalletReady(true);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [provider, providerReady]);
-
-  useEffect(() => {
-    if (!provider?.on) {
-      return;
-    }
-
-    const handleAccountsChanged = async () => {
-      const connectedAddress = await getConnectedWalletAddress(provider);
-      setWalletAddress(connectedAddress);
-      setWalletReady(true);
-    };
-
-    const handleChainChanged = (nextChainId: unknown) => {
-      const chainId = typeof nextChainId === "string" ? nextChainId.toLowerCase() : null;
-      setWalletChainId(chainId);
-      updateWalletStatuses(chainId);
-    };
-
-    provider.on("accountsChanged", handleAccountsChanged);
-    provider.on("chainChanged", handleChainChanged);
-
-    return () => {
-      provider.removeListener?.("accountsChanged", handleAccountsChanged);
-      provider.removeListener?.("chainChanged", handleChainChanged);
-    };
-  }, [provider]);
+  const provider = (walletProvider as BrowserEthereumProvider | undefined) ?? null;
+  const walletReady = status !== "connecting" && status !== "reconnecting";
+  const walletChainId = typeof chainId === "number" ? `0x${chainId.toString(16)}` : null;
+  const arenaChainHexId = `0x${getArenaChain().id.toString(16)}`.toLowerCase();
+  const profileChainHexId = `0x${getProfileChain().id.toString(16)}`.toLowerCase();
+  const normalizedWalletChainId = walletChainId?.toLowerCase() ?? null;
+  const walletArenaStatus: NetworkStatus = !normalizedWalletChainId
+    ? "unknown"
+    : normalizedWalletChainId === arenaChainHexId
+      ? "ready"
+      : "wrong-network";
+  const walletProfileStatus: NetworkStatus = !normalizedWalletChainId
+    ? "unknown"
+    : normalizedWalletChainId === profileChainHexId
+      ? "ready"
+      : "wrong-network";
 
   useEffect(() => {
     let cancelled = false;
@@ -213,7 +104,7 @@ export function ArenaProvider({ children }: { children: ReactNode }) {
 
       await Promise.all(
         ARENA_MODES.map(async (mode) => {
-          const configuredAddress = arenaEnv.hasVdtCoreAddress ? arenaEnv.vdtCoreAddress : arenaEnv.contractAddresses[mode];
+          const configuredAddress = arenaEnv.contractAddresses[mode];
 
           if (!configuredAddress) {
             return;
@@ -253,44 +144,32 @@ export function ArenaProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  async function openWalletModal() {
+    await open({ view: "Connect", namespace: "eip155" });
+  }
+
+  async function connectWallet() {
+    await openWalletModal();
+  }
+
   async function ensureArenaNetwork() {
     if (!provider) {
-      throw new Error("No browser wallet was detected. Install MetaMask or a compatible EIP-1193 wallet.");
+      throw new Error("Connect a wallet before switching networks.");
     }
 
     await ensureArenaWalletChain(provider);
-    const chainId = await getWalletChainId(provider);
-    setWalletChainId(chainId);
-    updateWalletStatuses(chainId);
   }
 
   async function ensureProfileNetwork() {
     if (!provider) {
-      throw new Error("No browser wallet was detected. Install MetaMask or a compatible EIP-1193 wallet.");
+      throw new Error("Connect a wallet before switching networks.");
     }
 
     await ensureProfileWalletChain(provider);
-    const chainId = await getWalletChainId(provider);
-    setWalletChainId(chainId);
-    updateWalletStatuses(chainId);
   }
 
-  async function connectWallet() {
-    if (!provider) {
-      throw new Error("No browser wallet was detected. Install MetaMask or a compatible EIP-1193 wallet.");
-    }
-
-    await ensureArenaNetwork();
-    const address = await requestWalletAddress(provider);
-    setWalletAddress(address);
-    setWalletReady(true);
-  }
-
-  function disconnectWallet() {
-    setWalletAddress(null);
-    setWalletChainId(null);
-    updateWalletStatuses(null);
-    setWalletReady(true);
+  async function disconnectWallet() {
+    await disconnect({ namespace: "eip155" });
   }
 
   const readyModes = ARENA_MODES.filter((mode) => gameContracts[mode].status === "ready");
@@ -301,6 +180,7 @@ export function ArenaProvider({ children }: { children: ReactNode }) {
         walletAddress,
         provider,
         walletReady,
+        openWalletModal,
         connectWallet,
         disconnectWallet,
         ensureArenaNetwork,
@@ -311,8 +191,8 @@ export function ArenaProvider({ children }: { children: ReactNode }) {
         gameContracts,
         readyModes,
         configuredModes: arenaEnv.configuredModes,
-        profileFactoryAddress: arenaEnv.profileFactoryAddress,
-        profileFactoryConfigured: arenaEnv.hasProfileFactoryAddress,
+        coreContractAddress: arenaEnv.vdtCoreAddress,
+        coreContractConfigured: arenaEnv.hasVdtCoreAddress,
         chain: getArenaChain().name,
         endpoint: getArenaEndpoint(),
         profileChain: getProfileChain().name,

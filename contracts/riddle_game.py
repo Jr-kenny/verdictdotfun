@@ -11,24 +11,19 @@ except ModuleNotFoundError:
 
 ZERO_ADDRESS = Address("0x0000000000000000000000000000000000000000")
 MODE = "riddle"
-RIDDLE_COUNT = 5
+RIDDLE_COUNT = 3
 RIDDLES_TO_WIN = 3
 
 
 @gl.contract_interface
-class ProfileFactory:
+class VerdictDotFunCore:
     class View:
         def get_profile_owner(self, profile: Address, /) -> Address: ...
         def is_registered_profile(self, profile: Address, /) -> bool: ...
-
-
-@gl.contract_interface
-class PlayerProfile:
-    class View:
-        def get_handle(self, /) -> str: ...
+        def get_profile_by_address(self, profile: Address, /) -> TreeMap[str, typing.Any]: ...
 
     class Write:
-        def apply_match_result(self, match_id: str, did_win: bool, mode: str, /) -> None: ...
+        def apply_match_result(self, profile: Address, match_id: str, did_win: bool, mode: str, /) -> None: ...
 
 
 @allow_storage
@@ -66,7 +61,7 @@ class RiddleRoom:
 
 class RiddleGame(gl.Contract):
     owner: Address
-    profile_factory: Address
+    core_contract: Address
     single_room_only: bool
     local_profiles: TreeMap[Address, LocalProfile]
     rooms: TreeMap[str, RiddleRoom]
@@ -75,18 +70,18 @@ class RiddleGame(gl.Contract):
     room_answers: TreeMap[str, str]
     room_aliases: TreeMap[str, str]
 
-    def __init__(self, profile_factory: typing.Any = ZERO_ADDRESS, single_room_only: bool = False):
+    def __init__(self, core_contract: typing.Any = ZERO_ADDRESS, single_room_only: bool = False):
         self.owner = gl.message.sender_address
-        self.profile_factory = self._normalize_address(profile_factory)
+        self.core_contract = self._normalize_address(core_contract)
         self.single_room_only = single_room_only
 
         root = gl.storage.Root.get()
         root.upgraders.get().append(gl.message.sender_address)
 
     @gl.public.write
-    def set_profile_factory(self, profile_factory: str):
+    def set_core_contract(self, core_contract: str):
         self._require_owner()
-        self.profile_factory = Address(profile_factory)
+        self.core_contract = Address(core_contract)
 
     @gl.public.write
     def register_profile(self, name: str):
@@ -108,7 +103,7 @@ class RiddleGame(gl.Contract):
         if not normalized_id:
             raise Exception("Room id is required.")
         if normalized_id in self.rooms:
-            raise Exception("Room already exists.")
+            return
         if not normalized_category:
             raise Exception("Category is required.")
 
@@ -121,7 +116,7 @@ class RiddleGame(gl.Contract):
             self.room_answers[key] = riddle["answer"]
             self.room_aliases[key] = "|".join(riddle["aliases"])
 
-        room_owner = owner_profile if self.profile_factory != ZERO_ADDRESS else gl.message.sender_address
+        room_owner = owner_profile if self.core_contract != ZERO_ADDRESS else gl.message.sender_address
         self.rooms[normalized_id] = RiddleRoom(
             id=normalized_id,
             mode=MODE,
@@ -152,7 +147,7 @@ class RiddleGame(gl.Contract):
     def join_room(self, room_id: str, opponent_profile: Address = ZERO_ADDRESS):
         opponent_profile = self._normalize_address(opponent_profile)
         room = self._require_room(room_id)
-        join_identity = opponent_profile if self.profile_factory != ZERO_ADDRESS else gl.message.sender_address
+        join_identity = opponent_profile if self.core_contract != ZERO_ADDRESS else gl.message.sender_address
 
         if room.owner == join_identity:
             raise Exception("The creator cannot join twice.")
@@ -194,9 +189,6 @@ class RiddleGame(gl.Contract):
             room.opponent_submission_order = room.submission_count
 
         self.rooms[room.id] = room
-
-        if room.owner_submission and room.opponent_submission:
-            self._resolve_current_riddle(room)
 
     @gl.public.write
     def resolve_room(self, room_id: str):
@@ -289,17 +281,17 @@ class RiddleGame(gl.Contract):
         return self.room_ids
 
     @gl.public.view
-    def get_profile_factory(self) -> Address:
-        return self.profile_factory
+    def get_core_contract(self) -> Address:
+        return self.core_contract
 
-    def _factory(self) -> ProfileFactory:
-        if self.profile_factory == ZERO_ADDRESS:
-            raise Exception("Profile factory is not configured.")
-        return ProfileFactory(self.profile_factory)
+    def _core(self) -> VerdictDotFunCore:
+        if self.core_contract == ZERO_ADDRESS:
+            raise Exception("Core contract is not configured.")
+        return VerdictDotFunCore(self.core_contract)
 
     def _generate_riddle_pack(self, room_id: str, category: str) -> TreeMap[str, typing.Any]:
         generation_prompt = f"""
-Generate a five-round riddle pack for a two-player on-chain game.
+Generate a {RIDDLE_COUNT}-round riddle pack for a two-player on-chain game.
 Return valid JSON only with this key:
 - "riddles": array of exactly {RIDDLE_COUNT} objects
 
@@ -310,7 +302,7 @@ Each riddle object must contain:
 
 Rules:
 - Category: {category}
-- Generate exactly five original riddles.
+- Generate exactly {RIDDLE_COUNT} original riddles.
 - Each riddle must point clearly toward a single answer or a very tight answer family.
 - The answer and aliases must be short enough for deterministic matching.
 - Avoid references to the game, AI judging, or blockchains unless the category naturally implies it.
@@ -335,7 +327,7 @@ Rules:
 
         riddles_raw = response.get("riddles")
         if not isinstance(riddles_raw, list) or len(riddles_raw) != RIDDLE_COUNT:
-            raise Exception("Generated riddle pack must contain exactly five riddles.")
+            raise Exception(f"Generated riddle pack must contain exactly {RIDDLE_COUNT} riddles.")
 
         riddles = []
         seen_prompts = set()
@@ -485,7 +477,7 @@ Rules:
                 room,
                 room.owner,
                 room.opponent,
-                f"{room.owner_name} solved more riddles across the full five-round match.",
+                f"{room.owner_name} solved more riddles across the full {RIDDLE_COUNT}-round match.",
             )
             return
 
@@ -494,13 +486,13 @@ Rules:
                 room,
                 room.opponent,
                 room.owner,
-                f"{room.opponent_name} solved more riddles across the full five-round match.",
+                f"{room.opponent_name} solved more riddles across the full {RIDDLE_COUNT}-round match.",
             )
             return
 
         room.status = "resolved"
         room.winner = ZERO_ADDRESS
-        room.verdict_reasoning = "The five-riddle match ended level, so the room resolved with no winner and no XP payout."
+        room.verdict_reasoning = f"The {RIDDLE_COUNT}-riddle match ended level, so the room resolved with no winner and no XP payout."
         self.rooms[room.id] = room
 
     def _finalize_room(self, room: RiddleRoom, winner: Address, loser: Address, reasoning: str):
@@ -521,24 +513,24 @@ Rules:
             raise Exception("Only the contract owner can perform this action.")
 
     def _require_profile_owner(self, profile_address: Address):
-        if self.profile_factory == ZERO_ADDRESS:
+        if self.core_contract == ZERO_ADDRESS:
             if gl.message.sender_address not in self.local_profiles:
                 raise Exception("Create a local profile before interacting with the riddle game.")
             return
 
         profile_address = self._normalize_address(profile_address)
-        factory = self._factory()
-        if not factory.view().is_registered_profile(profile_address):
+        core = self._core()
+        if not core.view().is_registered_profile(profile_address):
             raise Exception("Register a profile before interacting with this game.")
 
-        owner = factory.view().get_profile_owner(profile_address)
-        if gl.message.sender_address == self.profile_factory:
+        owner = core.view().get_profile_owner(profile_address)
+        if gl.message.sender_address == self.core_contract:
             return owner
         if owner != gl.message.sender_address:
             raise Exception("Only the current holder of this profile can perform that action.")
 
     def _require_player_name(self, profile_address: Address) -> str:
-        if self.profile_factory == ZERO_ADDRESS:
+        if self.core_contract == ZERO_ADDRESS:
             profile = self.local_profiles.get(gl.message.sender_address)
             if profile and profile.name:
                 return profile.name
@@ -546,25 +538,27 @@ Rules:
 
         profile_address = self._normalize_address(profile_address)
         self._require_profile_owner(profile_address)
-        handle = PlayerProfile(profile_address).view().get_handle().strip()
+        core = self._core()
+        profile = core.view().get_profile_by_address(profile_address)
+        handle = str(profile.get("handle", "")).strip()
         if not handle:
             raise Exception("Profile did not return a valid handle.")
         return handle
 
     def _participant_profile(self, room: RiddleRoom) -> Address:
         sender = gl.message.sender_address
-        if self.profile_factory == ZERO_ADDRESS:
+        if self.core_contract == ZERO_ADDRESS:
             if room.owner == sender:
                 return room.owner
             if room.opponent == sender:
                 return room.opponent
             raise Exception("Only room participants can submit.")
 
-        factory = self._factory()
+        core = self._core()
 
-        if room.owner != ZERO_ADDRESS and factory.view().get_profile_owner(room.owner) == sender:
+        if room.owner != ZERO_ADDRESS and core.view().get_profile_owner(room.owner) == sender:
             return room.owner
-        if room.opponent != ZERO_ADDRESS and factory.view().get_profile_owner(room.opponent) == sender:
+        if room.opponent != ZERO_ADDRESS and core.view().get_profile_owner(room.opponent) == sender:
             return room.opponent
         raise Exception("Only room participants can submit.")
 
@@ -598,7 +592,7 @@ Rules:
         return False
 
     def _emit_profile_result(self, room_id: str, winner: Address, loser: Address):
-        if self.profile_factory == ZERO_ADDRESS:
+        if self.core_contract == ZERO_ADDRESS:
             return
         winner = self._normalize_address(winner)
         loser = self._normalize_address(loser)
@@ -606,8 +600,9 @@ Rules:
             return
 
         match_id = self._match_id(room_id)
-        PlayerProfile(winner).emit(on="accepted").apply_match_result(match_id, True, MODE)
-        PlayerProfile(loser).emit(on="accepted").apply_match_result(match_id, False, MODE)
+        core = self._core()
+        core.emit(on="accepted").apply_match_result(winner, match_id, True, MODE)
+        core.emit(on="accepted").apply_match_result(loser, match_id, False, MODE)
 
     def _resolved_loser(self, room: RiddleRoom) -> Address:
         if room.winner == room.owner:

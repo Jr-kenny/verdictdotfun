@@ -52,7 +52,7 @@ const Leaderboard = () => {
           <div className="mt-6 space-y-3">
             {entries.length === 0 && !leaderboardQuery.isLoading ? (
               <div className="rounded-xl border border-dashed border-border/70 bg-background/40 px-4 py-8 text-center text-sm text-muted-foreground">
-                No ranked profiles yet on the active VDTCore contract.
+                No ranked profiles yet on the active VerdictDotFun contract.
               </div>
             ) : null}
 

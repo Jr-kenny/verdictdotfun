@@ -17,12 +17,14 @@
     "check": "pnpm lint && pnpm typecheck && pnpm test",
     "deploy:contract": "node ./deploy/deploy-contract.mjs",
     "deploy:upgrade": "node ./deploy/upgrade-contract.mjs",
+    "deploy:smoke:c2c": "node ./deploy/smoke-contract-to-contract.mjs",
+    "loadtest:bradbury": "node ./scripts/bradbury-loadtest.mjs",
     "relayer": "node ./deploy/relayer.mjs",
     "compile:evm": "hardhat compile --config hardhat.config.cjs",
     "deploy:profile:nft": "hardhat run deploy/deploy-profile-nft.cjs --network baseSepolia --config hardhat.config.cjs",
     "deploy:profile:nft:operator": "hardhat run deploy/set-profile-nft-operator.cjs --network baseSepolia --config hardhat.config.cjs",
     "deploy:profile:rewarders": "hardhat run deploy/set-profile-rewarders.cjs --network baseSepolia --config hardhat.config.cjs",
-    "contract:test": "py -m pytest tests/direct -v",
+    "contract:test": ".\\.venv\\Scripts\\python -m pytest tests/direct -v",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -57,6 +59,8 @@
     "@radix-ui/react-toggle": "^1.1.9",
     "@radix-ui/react-toggle-group": "^1.1.10",
     "@radix-ui/react-tooltip": "^1.2.7",
+    "@reown/appkit": "^1.8.19",
+    "@reown/appkit-adapter-wagmi": "^1.8.19",
     "@tanstack/react-query": "^5.83.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -80,6 +84,7 @@
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.9",
     "viem": "^2.47.6",
+    "wagmi": "^3.6.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {

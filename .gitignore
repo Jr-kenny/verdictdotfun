@@ -20,6 +20,7 @@ dist-ssr
 *.pyc
 *.tsbuildinfo
 .env
+.env.example
 .env.*
 !.env.example
 *.local

@@ -1,6 +1,7 @@
-import type { ArenaMode } from "@/types/arena";
+import type { ArenaMode, ArgueStyle } from "@/types/arena";
 
-export const ARENA_MODES: ArenaMode[] = ["debate", "convince", "quiz", "riddle"];
+export const ARENA_MODES: ArenaMode[] = ["argue", "riddle"];
+export const ARGUE_STYLES: ArgueStyle[] = ["debate", "convince"];
 
 export const GAME_MODE_META: Record<
   ArenaMode,
@@ -18,49 +19,23 @@ export const GAME_MODE_META: Record<
     minimumSubmissionLength: number;
   }
 > = {
-  debate: {
-    title: "Debate",
-    summary: "Proposer versus opposer. The contract rewards the stronger case, not objective truth.",
-    description: "Open a two-sided debate where the contract generates the proposition and one player proposes while the other opposes.",
-    ownerLabel: "Proposer",
-    opponentLabel: "Opposer",
-    promptLabel: "Debate prompt",
-    submissionLabel: "Your debate case",
-    promptPlaceholder: "State the exact proposition both players will argue over.",
-    submissionPlaceholder: "Write a structured case with claims, support, and direct engagement with the prompt.",
+  argue: {
+    title: "Argue",
+    summary: "One contract, two room styles. Pick debate or convince when you open the room.",
+    description: "Open an argue room, choose whether it should generate a debate motion or a convince-me scenario, and let the contract judge the stronger case.",
+    ownerLabel: "Player One",
+    opponentLabel: "Player Two",
+    promptLabel: "Room prompt",
+    submissionLabel: "Your argument",
+    promptPlaceholder: "The contract generates the exact prompt after you choose the argue style.",
+    submissionPlaceholder: "Write a clear, structured argument that directly addresses the generated prompt.",
     defaultCategory: "Tech",
     minimumSubmissionLength: 40,
   },
-  convince: {
-    title: "Convince Me",
-    summary: "The contract starts from a hostile stance and picks who moved it the furthest.",
-    description: "Both players try to persuade the contract away from the room-specific stance it generates.",
-    ownerLabel: "Player One",
-    opponentLabel: "Player Two",
-    promptLabel: "Scenario",
-    submissionLabel: "Your persuasion case",
-    promptPlaceholder: "Describe the angle or scenario the players should use to challenge the contract's stance.",
-    submissionPlaceholder: "Make the strongest case for why the contract should soften or reverse its starting position.",
-    defaultCategory: "Social",
-    minimumSubmissionLength: 40,
-  },
-  quiz: {
-    title: "Quiz",
-    summary: "The contract generates study material, then both players race through the same eleven-question quiz.",
-    description: "Open a head-to-head quiz where the opponent accepts, the owner starts generation, both players study the same note, and the contract runs a shared-question race to six.",
-    ownerLabel: "Player One",
-    opponentLabel: "Player Two",
-    promptLabel: "Quiz set",
-    submissionLabel: "Your answer",
-    promptPlaceholder: "The contract generates the quiz title and source material from the category.",
-    submissionPlaceholder: "Pick one of the five options. Fastest confirmed answer gets first shot.",
-    defaultCategory: "History",
-    minimumSubmissionLength: 1,
-  },
   riddle: {
     title: "Riddle",
-    summary: "The contract generates five riddles and the first player to solve three wins the room.",
-    description: "Open a five-round riddle match where both players lock one guess per riddle and the contract advances until someone reaches three correct answers.",
+    summary: "The contract generates three riddles and the first player to solve all three wins the room.",
+    description: "Open a three-round riddle match where both players lock one guess per riddle and resolve each round on-chain.",
     ownerLabel: "Player One",
     opponentLabel: "Player Two",
     promptLabel: "Riddle clue",
@@ -73,7 +48,7 @@ export const GAME_MODE_META: Record<
 };
 
 export function getArenaMode(value: string | undefined): ArenaMode | null {
-  if (value === "debate" || value === "convince" || value === "quiz" || value === "riddle") {
+  if (value === "argue" || value === "riddle") {
     return value;
   }
 

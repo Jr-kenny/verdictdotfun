@@ -6,18 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useArena } from "@/context/ArenaContext";
 import Header from "@/components/Header";
+import { ARGUE_STYLES } from "@/lib/gameModes";
 import { fetchStoredLocalProfileName, getLocalProfileQueryKey } from "@/lib/localProfile";
 import { fetchArenaProfile } from "@/lib/profileFactory";
-import { createRoom, fetchAllRooms, fetchRoom, registerLocalProfile, shouldUseLocalProfileAlias, waitForRoom } from "@/lib/verdictArena";
-import type { ArenaMode } from "@/types/arena";
-import { Brain, HelpCircle, Puzzle, Radio, Swords } from "lucide-react";
+import { createRoom, fetchAllRooms, fetchRoom, registerLocalProfile, shouldUseLocalProfileAlias } from "@/lib/verdictArena";
+import type { ArenaMode, ArgueStyle } from "@/types/arena";
+import { Puzzle, Radio, Swords } from "lucide-react";
 import { toast } from "sonner";
 
 const MODES: { id: ArenaMode; title: string; icon: typeof Swords; desc: string }[] = [
-  { id: "debate", title: "Argue", icon: Swords, desc: "Contract assigns sides. Best argument wins, not the truth." },
-  { id: "convince", title: "Convince Me", icon: Brain, desc: "Contract generates a house stance for each room. Most convincing wins." },
-  { id: "quiz", title: "Quiz", icon: HelpCircle, desc: "Opponent accepts, owner starts the generated study note, then both race through the same 11 questions." },
-  { id: "riddle", title: "Riddle", icon: Puzzle as typeof Swords, desc: "Five generated riddles per room. First player to solve three wins." },
+  { id: "argue", title: "Argue", icon: Swords, desc: "Choose debate or convince when you open the room." },
+  { id: "riddle", title: "Riddle", icon: Puzzle as typeof Swords, desc: "Three generated riddles per room. Solve all three to win." },
 ];
 const CATEGORY_OPTIONS = ["Tech", "Web3", "Nature", "Culture", "Sports", "History"];
 
@@ -29,7 +28,8 @@ const Lobby = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { walletAddress, walletReady, provider, ensureArenaNetwork, readyModes, gameContracts } = useArena();
-  const [selectedMode, setSelectedMode] = useState<ArenaMode>("debate");
+  const [selectedMode, setSelectedMode] = useState<ArenaMode>("argue");
+  const [argueStyle, setArgueStyle] = useState<ArgueStyle>("debate");
   const [joinCode, setJoinCode] = useState("");
   const [showJoinInput, setShowJoinInput] = useState(false);
   const [category, setCategory] = useState("Tech");
@@ -49,7 +49,7 @@ const Lobby = () => {
     queryKey: ["rooms", readyModes.join(",")],
     queryFn: () => fetchAllRooms(readyModes),
     enabled: readyModes.length > 0,
-    refetchInterval: 7_500,
+    refetchInterval: 3_000,
   });
 
   useEffect(() => {
@@ -107,12 +107,12 @@ const Lobby = () => {
       await createRoom(selectedMode, walletAddress, provider, {
         roomId,
         category: category.trim(),
+        argueStyle,
         profileAddress: profileQuery.data?.profileAddress ?? null,
       });
       return { roomId, mode: selectedMode };
     },
     onSuccess: async ({ roomId, mode }) => {
-      await waitForRoom(mode, roomId);
       await queryClient.invalidateQueries({ queryKey: ["rooms"] });
       navigate(`/room/${mode}/${roomId}`);
     },
@@ -311,8 +311,33 @@ const Lobby = () => {
 
                   <div className="space-y-3">
                     <p className="text-sm text-muted-foreground">
-                      Choose a category. The contract generates the room topic, scenario, question, or riddle clue by itself.
+                      Choose a category.
                     </p>
+                    {selectedMode === "argue" && (
+                      <div className="space-y-2">
+                        <p className="text-sm text-muted-foreground">Create room</p>
+                        <div className="relative grid grid-cols-2 rounded-full border border-amber-400/25 bg-card/70 p-1">
+                          <div
+                            aria-hidden="true"
+                            className={`absolute bottom-1 top-1 w-[calc(50%-0.25rem)] rounded-full bg-gradient-to-r from-amber-400 to-orange-500 shadow-[0_0_18px_rgba(249,115,22,0.28)] transition-transform duration-300 ease-out ${
+                              argueStyle === "convince" ? "translate-x-full" : "translate-x-0"
+                            } left-1`}
+                          />
+                          {ARGUE_STYLES.map((style) => (
+                            <button
+                              key={style}
+                              type="button"
+                              onClick={() => setArgueStyle(style)}
+                              className={`relative z-10 rounded-full px-4 py-2.5 text-sm font-heading tracking-wide transition-colors ${
+                                argueStyle === style ? "text-black" : "text-amber-100/80 hover:text-amber-50"
+                              }`}
+                            >
+                              {style === "debate" ? "Debate" : "Convince Me"}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <div className="flex flex-wrap gap-2">
                       {CATEGORY_OPTIONS.map((option) => (
                         <button
@@ -391,7 +416,11 @@ const Lobby = () => {
                             className="text-sm py-2 px-3 rounded bg-card/50 border border-border/50"
                           >
                             <Link to={`/room/${room.mode}/${room.id}`} className="block">
-                              <span className="text-label-blue font-semibold">[{label}]</span> {room.prompt}
+                              <span className="text-label-blue font-semibold">[{label}]</span>{" "}
+                              {room.mode === "argue" ? (
+                                <span className="text-xs uppercase tracking-wide text-primary/80">[{room.argueStyle === "convince" ? "Convince" : "Debate"}]</span>
+                              ) : null}{" "}
+                              {room.prompt || (room.mode === "argue" ? "Prompt pending until the room starts." : "Riddle loading...")}
                               <span className="text-muted-foreground ml-2 text-xs">{room.id}</span>
                             </Link>
                           </motion.div>
