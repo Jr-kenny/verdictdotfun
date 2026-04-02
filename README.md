@@ -1,6 +1,27 @@
 # verdictdotfun
 
-GenLayer game app with on-chain profiles, live rooms, and two shipped modes: argue and riddle.
+VerdictDotFun is a GenLayer multiplayer game app with persistent on-chain player profiles, live room-based gameplay, and contract-native match resolution.
+
+Instead of treating the blockchain like a place to merely store outcomes, VerdictDotFun treats contracts as the game engine:
+
+- the core contract owns player identity, leaderboard state, and room registration
+- game mode contracts run the actual match flow
+- player actions advance the game directly on-chain
+
+The current shipped modes are `argue` and `riddle`.
+
+## Why this project exists
+
+Most on-chain games still feel like transaction demos. Users click through a sequence of writes, but the game loop itself is not really encoded into the contract flow.
+
+VerdictDotFun is built around a different idea:
+
+- players should have a persistent identity
+- rooms should feel like live multiplayer spaces
+- contracts should advance the match, not just record it
+- the game loop should avoid unnecessary extra transactions
+
+That design goal shaped the current architecture and gameplay rules.
 
 ## What this project is
 
@@ -21,6 +42,16 @@ There are two mode contracts:
 `riddle` runs a three-round match. Each guess resolves immediately, each player gets up to three tries per riddle, and the higher score after three riddles wins. Equal scores resolve as a tie.
 
 There is also an optional EVM profile badge/NFT mirror under `contracts/evm/` and the related deploy scripts in `deploy/`.
+
+## What makes it different
+
+VerdictDotFun is not just a frontend that sends transactions to static contracts. The gameplay itself is modeled in the contracts:
+
+- room creation is routed through a shared core registry
+- `argue` prompts are generated on-chain and the final submission resolves the room immediately
+- `riddle` guesses are checked immediately on-chain and the room advances automatically
+- match outcomes update persistent profile progression on-chain
+- tied rooms are handled explicitly instead of being treated like failures
 
 ## How it works
 
@@ -44,6 +75,24 @@ There is also an optional EVM profile badge/NFT mirror under `contracts/evm/` an
 - Core contract keeps the room registry and approved mode contracts
 - Local alias fallback when the core contract is not configured
 - Optional Base Sepolia profile badge sync
+
+## Shipped gameplay rules
+
+### Argue
+
+- The room owner opens either a `debate` or `convince` room
+- The contract generates the prompt after both players are ready
+- Each player submits one argument
+- The final submission triggers verdict resolution in the same transaction
+
+### Riddle
+
+- Each room contains 3 riddles
+- Every guess is checked immediately on-chain
+- The fastest correct guess wins that riddle immediately
+- Each player gets up to 3 guesses per riddle
+- If both players miss all 3 guesses, the contract advances to the next riddle automatically
+- After 3 riddles, the higher score wins and equal scores resolve as a tie
 
 ## Tech stack
 
@@ -128,6 +177,15 @@ Relevant env vars:
 - Room creation goes through the core contract. Room play goes through the mode contract.
 - The frontend still supports a local alias path for cases where the core contract is not configured.
 - The mode contracts are fixed addresses in the current app config and are bound to the core with `set_mode_contract`.
+
+## Why it matters
+
+VerdictDotFun is a useful GenLayer demo because it shows a full multiplayer product loop instead of an isolated contract gimmick:
+
+- player identity persists across matches
+- multiple game modes share the same progression system
+- the room lifecycle is contract-driven
+- the game flow has been tightened so users do not need unnecessary follow-up transactions just to finish a normal turn
 
 ## Limitations / TODO
 
