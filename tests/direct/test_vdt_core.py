@@ -48,6 +48,21 @@ def test_verdictdotfun_bootstraps_child_mode_contracts_in_constructor(direct_vm,
     assert core.is_game_contract(argue_contract) is True
 
 
+def test_verdictdotfun_creates_riddle_rooms_without_argue_style_forwarding(direct_vm, direct_deploy, direct_alice):
+    direct_vm.sender = direct_alice
+    riddle_code = (Path(__file__).resolve().parents[2] / "contracts" / "riddle_game.py").read_text("utf-8")
+
+    core = direct_deploy("contracts/verdictdotfun.py", 1, "", "", "", riddle_code)
+    profile = core.create_profile("Alice")
+
+    room_contract = core.create_room("riddle", "ROOM77", "technology", profile)
+
+    assert room_contract == core.get_mode_contract("riddle")
+    assert room_contract != ZERO_ADDRESS
+    assert core.get_room_contract("ROOM77") == room_contract
+    assert core.get_room_mode("ROOM77") == "riddle"
+
+
 def test_verdictdotfun_applies_match_results_for_approved_game_contracts(direct_vm, direct_deploy, direct_alice, direct_bob):
     direct_vm.sender = direct_alice
     core = direct_deploy("contracts/verdictdotfun.py", 1)

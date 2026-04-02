@@ -41,7 +41,6 @@ def test_argue_debate_room_and_resolution_flow(direct_vm, direct_deploy, direct_
         "ROOM01",
         "Blanket bans punish workers and small businesses before transit quality is good enough to absorb the demand those restrictions would create.",
     )
-    contract.resolve_room("ROOM01")
 
     room = contract.get_room("ROOM01")
     assert room.mode == "argue"
@@ -92,13 +91,60 @@ def test_argue_convince_room_resolution_flow(direct_vm, direct_deploy, direct_al
         "ROOM03",
         "Targeted venue support is cheaper than rebuilding cultural identity later, and it protects the small businesses that keep districts active at night.",
     )
-    contract.resolve_room("ROOM03")
 
     room = contract.get_room("ROOM03")
     assert room.mode == "argue"
     assert room.argue_style == "convince"
     assert room.status == "resolved"
     assert room.house_stance.startswith("Small venues are emotionally appealing")
+
+
+def test_argue_second_submission_auto_resolves_the_room(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy("contracts/argue_game.py", ZERO_ADDRESS)
+
+    direct_vm.mock_llm(
+        r"(?s).*Generate one sharp debate motion.*ROOM04.*",
+        {
+            "prompt": "Cities should replace minimum parking requirements with congestion pricing in their busiest districts.",
+        },
+    )
+
+    direct_vm.sender = direct_alice
+    contract.register_profile("Alice")
+    contract.create_room("ROOM04", "Tech", ZERO_ADDRESS, "debate")
+
+    direct_vm.sender = direct_bob
+    contract.register_profile("Bob")
+    contract.join_room("ROOM04")
+
+    direct_vm.sender = direct_alice
+    contract.start_room("ROOM04")
+    contract.submit_entry(
+        "ROOM04",
+        "Parking mandates subsidize car storage, while congestion pricing directly targets peak road demand and funds better transit service.",
+    )
+
+    direct_vm.mock_llm(
+        r"(?s).*This room uses the debate style.*minimum parking requirements.*",
+        {
+            "winner": "opponent",
+            "owner_score": 84,
+            "opponent_score": 91,
+            "reasoning": "Bob did the better job connecting street design, pricing, and political feasibility into one coherent case.",
+        },
+    )
+
+    direct_vm.sender = direct_bob
+    contract.submit_entry(
+        "ROOM04",
+        "Congestion pricing is easier to tune over time, and ending parking mandates removes a hidden subsidy that keeps streets less productive.",
+    )
+
+    room = contract.get_room("ROOM04")
+    assert room.status == "resolved"
+    assert room.winner == room.opponent
+    assert room.owner_score == 84
+    assert room.opponent_score == 91
 
 
 def test_argue_requires_local_profile_when_factory_is_not_configured(direct_vm, direct_deploy, direct_alice):

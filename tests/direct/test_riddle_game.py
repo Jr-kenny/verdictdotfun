@@ -44,9 +44,6 @@ def test_riddle_match_runs_for_three_rounds_and_first_to_three_wins(direct_vm, d
 
     direct_vm.sender = direct_alice
     contract.submit_entry("ROOM06", "smartphone")
-    direct_vm.sender = direct_bob
-    contract.submit_entry("ROOM06", "tablet")
-    contract.resolve_room("ROOM06")
 
     room = contract.get_room("ROOM06")
     assert room.owner_score == 1
@@ -55,9 +52,6 @@ def test_riddle_match_runs_for_three_rounds_and_first_to_three_wins(direct_vm, d
 
     direct_vm.sender = direct_alice
     contract.submit_entry("ROOM06", "thermos")
-    direct_vm.sender = direct_bob
-    contract.submit_entry("ROOM06", "cup")
-    contract.resolve_room("ROOM06")
 
     room = contract.get_room("ROOM06")
     assert room.owner_score == 2
@@ -67,9 +61,6 @@ def test_riddle_match_runs_for_three_rounds_and_first_to_three_wins(direct_vm, d
 
     direct_vm.sender = direct_alice
     contract.submit_entry("ROOM06", "ceiling fan")
-    direct_vm.sender = direct_bob
-    contract.submit_entry("ROOM06", "fan")
-    contract.resolve_room("ROOM06")
 
     resolved = contract.get_room("ROOM06")
     assert resolved.status == "resolved"
@@ -77,6 +68,95 @@ def test_riddle_match_runs_for_three_rounds_and_first_to_three_wins(direct_vm, d
     assert resolved.owner_score == 3
     assert resolved.opponent_score == 0
     assert "solved three riddles first" in resolved.verdict_reasoning
+
+
+def test_riddle_allows_three_guesses_each_before_advancing_to_next_riddle(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy("contracts/riddle_game.py", ZERO_ADDRESS)
+    _mock_riddle_pack(direct_vm, "ROOM09")
+
+    direct_vm.sender = direct_alice
+    contract.register_profile("Alice")
+    contract.create_room("ROOM09", "Tech")
+
+    direct_vm.sender = direct_bob
+    contract.register_profile("Bob")
+    contract.join_room("ROOM09")
+
+    direct_vm.sender = direct_alice
+    contract.submit_entry("ROOM09", "tablet")
+    contract.submit_entry("ROOM09", "pager")
+    contract.submit_entry("ROOM09", "laptop")
+
+    direct_vm.sender = direct_bob
+    contract.submit_entry("ROOM09", "camera")
+    contract.submit_entry("ROOM09", "watch")
+    contract.submit_entry("ROOM09", "speaker")
+
+    room = contract.get_room("ROOM09")
+    assert room.current_question_index == 2
+    assert room.owner_score == 0
+    assert room.opponent_score == 0
+    assert room.revealed_answer == "smartphone"
+    assert "Neither player solved riddle 1 after 3 guesses each." == room.verdict_reasoning
+
+
+def test_riddle_fastest_correct_guess_wins_the_round_immediately(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy("contracts/riddle_game.py", ZERO_ADDRESS)
+    _mock_riddle_pack(direct_vm, "ROOM10")
+
+    direct_vm.sender = direct_alice
+    contract.register_profile("Alice")
+    contract.create_room("ROOM10", "Tech")
+
+    direct_vm.sender = direct_bob
+    contract.register_profile("Bob")
+    contract.join_room("ROOM10")
+
+    direct_vm.sender = direct_bob
+    contract.submit_entry("ROOM10", "phone")
+
+    room = contract.get_room("ROOM10")
+    assert room.current_question_index == 2
+    assert room.owner_score == 0
+    assert room.opponent_score == 1
+    assert room.revealed_answer == "smartphone"
+    assert room.prompt.startswith("I hold hot drinks")
+
+
+def test_riddle_match_can_end_in_a_tie_when_scores_are_level_after_three_riddles(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy("contracts/riddle_game.py", ZERO_ADDRESS)
+    _mock_riddle_pack(direct_vm, "ROOM11")
+
+    direct_vm.sender = direct_alice
+    contract.register_profile("Alice")
+    contract.create_room("ROOM11", "Tech")
+
+    direct_vm.sender = direct_bob
+    contract.register_profile("Bob")
+    contract.join_room("ROOM11")
+
+    direct_vm.sender = direct_alice
+    contract.submit_entry("ROOM11", "smartphone")
+
+    direct_vm.sender = direct_bob
+    contract.submit_entry("ROOM11", "thermos")
+
+    direct_vm.sender = direct_alice
+    contract.submit_entry("ROOM11", "lamp")
+    contract.submit_entry("ROOM11", "light")
+    contract.submit_entry("ROOM11", "desk")
+
+    direct_vm.sender = direct_bob
+    contract.submit_entry("ROOM11", "cup")
+    contract.submit_entry("ROOM11", "mug")
+    contract.submit_entry("ROOM11", "bottle")
+
+    resolved = contract.get_room("ROOM11")
+    assert resolved.status == "resolved"
+    assert str(resolved.winner).lower() == ZERO_ADDRESS
+    assert resolved.owner_score == 1
+    assert resolved.opponent_score == 1
+    assert "resolved with no winner" in resolved.verdict_reasoning
 
 
 def test_riddle_pack_generation_uses_the_selected_category(direct_vm, direct_deploy, direct_alice):

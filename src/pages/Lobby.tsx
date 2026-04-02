@@ -9,14 +9,14 @@ import Header from "@/components/Header";
 import { ARGUE_STYLES } from "@/lib/gameModes";
 import { fetchStoredLocalProfileName, getLocalProfileQueryKey } from "@/lib/localProfile";
 import { fetchArenaProfile } from "@/lib/profileFactory";
-import { createRoom, fetchAllRooms, fetchRoom, registerLocalProfile, shouldUseLocalProfileAlias } from "@/lib/verdictArena";
+import { createRoom, fetchAllRooms, fetchRoom, isEmptyAddress, registerLocalProfile, shouldUseLocalProfileAlias, waitForRoom } from "@/lib/verdictArena";
 import type { ArenaMode, ArgueStyle } from "@/types/arena";
 import { Puzzle, Radio, Swords } from "lucide-react";
 import { toast } from "sonner";
 
 const MODES: { id: ArenaMode; title: string; icon: typeof Swords; desc: string }[] = [
   { id: "argue", title: "Argue", icon: Swords, desc: "Choose debate or convince when you open the room." },
-  { id: "riddle", title: "Riddle", icon: Puzzle as typeof Swords, desc: "Three generated riddles per room. Solve all three to win." },
+  { id: "riddle", title: "Riddle", icon: Puzzle as typeof Swords, desc: "Three riddles per room. Each guess resolves immediately, with three tries per player per riddle." },
 ];
 const CATEGORY_OPTIONS = ["Tech", "Web3", "Nature", "Culture", "Sports", "History"];
 
@@ -82,7 +82,7 @@ const Lobby = () => {
       .filter((room) => room.status === "resolved")
       .filter((room) => room.owner.toLowerCase() === normalizedIdentity || room.opponent.toLowerCase() === normalizedIdentity)
       .sort((left, right) => right.id.localeCompare(left.id))
-      .slice(0, 6);
+      .slice(0, 7);
   }, [activeIdentity, roomsQuery.data]);
 
   const currentMode = MODES.find((m) => m.id === selectedMode);
@@ -110,6 +110,7 @@ const Lobby = () => {
         argueStyle,
         profileAddress: profileQuery.data?.profileAddress ?? null,
       });
+      await waitForRoom(selectedMode, roomId, 60, 2_500);
       return { roomId, mode: selectedMode };
     },
     onSuccess: async ({ roomId, mode }) => {
@@ -256,7 +257,10 @@ const Lobby = () => {
                 const label = MODES.find((mode) => mode.id === room.mode)?.title ?? room.mode;
                 const isOwner = activeIdentity ? room.owner.toLowerCase() === activeIdentity.toLowerCase() : false;
                 const opponentName = isOwner ? room.opponentName : room.ownerName;
-                const didWin = activeIdentity ? room.winner.toLowerCase() === activeIdentity.toLowerCase() : false;
+                const isTie = isEmptyAddress(room.winner);
+                const didWin = !isTie && activeIdentity ? room.winner.toLowerCase() === activeIdentity.toLowerCase() : false;
+                const resultLabel = isTie ? "Tie" : didWin ? "Victory" : "Defeat";
+                const resultClass = isTie ? "text-muted-foreground font-semibold" : didWin ? "text-victory font-semibold" : "text-defeat font-semibold";
 
                 return (
                   <motion.div
@@ -267,8 +271,8 @@ const Lobby = () => {
                     className="text-sm py-3 px-3 rounded bg-card/50 border border-border/50"
                   >
                     You took a{" "}
-                    <span className={didWin ? "text-victory font-semibold" : "text-defeat font-semibold"}>
-                      [{didWin ? "Victory" : "Defeat"}]
+                    <span className={resultClass}>
+                      [{resultLabel}]
                     </span>{" "}
                     against {opponentName || "Unknown"} in{" "}
                     <span className="text-label-blue font-semibold">[{label}]</span>.
@@ -279,7 +283,7 @@ const Lobby = () => {
                 );
               })}
             </div>
-            <p className="text-xs text-muted-foreground mt-2">Showing your latest completed matches.</p>
+            <p className="text-xs text-muted-foreground mt-2">Showing your last 7 completed matches.</p>
           </motion.div>
 
         </motion.div>

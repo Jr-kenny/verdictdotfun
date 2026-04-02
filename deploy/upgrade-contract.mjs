@@ -5,7 +5,7 @@ import { createAccount, createClient } from "genlayer-js";
 import { localnet, studionet, testnetAsimov, testnetBradbury } from "genlayer-js/chains";
 import { TransactionStatus } from "genlayer-js/types";
 
-const chainKey = process.env.GENLAYER_CHAIN ?? "testnetBradbury";
+const chainKey = process.env.GENLAYER_CHAIN ?? "studionet";
 const privateKey = process.env.GENLAYER_DEPLOYER_PRIVATE_KEY;
 const upgradeTarget = process.env.UPGRADE_TARGET ?? "all";
 const waitStatus =
@@ -48,10 +48,6 @@ const client = createClient({
   endpoint: process.env.GENLAYER_ENDPOINT ?? chains[chainKey].rpcUrls.default.http[0],
   account: createAccount(privateKey),
 });
-
-if (typeof client.initializeConsensusSmartContract === "function") {
-  await client.initializeConsensusSmartContract();
-}
 
 const FAILED_STATUSES = new Set([
   "UNDETERMINED",

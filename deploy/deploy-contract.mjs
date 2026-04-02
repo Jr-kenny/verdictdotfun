@@ -6,7 +6,7 @@ import { localnet, studionet, testnetAsimov, testnetBradbury } from "genlayer-js
 import { TransactionStatus } from "genlayer-js/types";
 import { encodeFunctionData, parseEventLogs } from "viem";
 
-const chainKey = process.env.GENLAYER_CHAIN ?? "testnetBradbury";
+const chainKey = process.env.GENLAYER_CHAIN ?? "studionet";
 const deployTarget = process.env.DEPLOY_TARGET ?? "all";
 const privateKey = process.env.GENLAYER_DEPLOYER_PRIVATE_KEY;
 const initialSeason = Number(process.env.PROFILE_INITIAL_SEASON ?? "1");
@@ -31,10 +31,6 @@ const client = createClient({
   endpoint: process.env.GENLAYER_ENDPOINT ?? chains[chainKey].rpcUrls.default.http[0],
   account: createAccount(privateKey),
 });
-
-if (typeof client.initializeConsensusSmartContract === "function") {
-  await client.initializeConsensusSmartContract();
-}
 
 const contractPaths = {
   verdictdotfun: resolve(process.cwd(), "contracts", "verdictdotfun.py"),
@@ -183,10 +179,7 @@ function normalizeAddress(value) {
 }
 
 function getContractAddressFromReceipt(receipt) {
-  const contractAddress =
-    chainKey === "testnetBradbury"
-      ? receipt?.txDataDecoded?.contractAddress
-      : receipt?.data?.contract_address;
+  const contractAddress = receipt?.data?.contract_address ?? receipt?.txDataDecoded?.contractAddress;
 
   if (!contractAddress) {
     throw new Error("Deployment completed without returning a contract address.");

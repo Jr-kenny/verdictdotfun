@@ -8,7 +8,7 @@ import { TransactionStatus } from "genlayer-js/types";
 import { Contract, JsonRpcProvider, Wallet } from "ethers";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const chainKey = process.env.GENLAYER_CHAIN ?? "testnetBradbury";
+const chainKey = process.env.GENLAYER_CHAIN ?? "studionet";
 const privateKey = process.env.GENLAYER_DEPLOYER_PRIVATE_KEY;
 const vdtCoreAddress =
   process.env.VERDICTDOTFUN_CONTRACT_ADDRESS ??
@@ -88,10 +88,6 @@ const verdictNftClient =
   verdictNftAddress && verdictNftPrivateKey
     ? new Contract(verdictNftAddress, verdictNftAbi, new Wallet(verdictNftPrivateKey, new JsonRpcProvider(baseSepoliaRpcUrl)))
     : null;
-
-if (typeof client.initializeConsensusSmartContract === "function") {
-  await client.initializeConsensusSmartContract();
-}
 
 function parseCsv(value) {
   if (!value) {

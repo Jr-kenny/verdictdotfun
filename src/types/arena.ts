@@ -64,4 +64,6 @@ export interface ArenaRoom {
   opponentScore: number;
   verdictReasoning: string;
   revealedAnswer?: string;
+  ownerAttemptsUsed?: number;
+  opponentAttemptsUsed?: number;
 }

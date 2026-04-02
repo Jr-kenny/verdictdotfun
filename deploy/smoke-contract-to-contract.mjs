@@ -5,7 +5,7 @@ import { createAccount, createClient } from "genlayer-js";
 import { localnet, studionet, testnetAsimov, testnetBradbury } from "genlayer-js/chains";
 import { TransactionStatus } from "genlayer-js/types";
 
-const chainKey = process.env.GENLAYER_CHAIN ?? "testnetBradbury";
+const chainKey = process.env.GENLAYER_CHAIN ?? "studionet";
 const privateKey = process.env.GENLAYER_DEPLOYER_PRIVATE_KEY;
 const endpoint = process.env.GENLAYER_ENDPOINT;
 
@@ -30,10 +30,6 @@ const client = createClient({
   endpoint: endpoint ?? chain.rpcUrls.default.http[0],
   account: createAccount(privateKey),
 });
-
-if (typeof client.initializeConsensusSmartContract === "function") {
-  await client.initializeConsensusSmartContract();
-}
 
 const contractPaths = {
   core: resolve(process.cwd(), "contracts", "score_core_smoke.py"),

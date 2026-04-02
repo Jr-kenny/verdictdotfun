@@ -74,6 +74,7 @@ const RoomLobby = () => {
   const room = roomQuery.data;
   const modeMeta = mode ? GAME_MODE_META[mode] : null;
   const isRiddleMode = mode === "riddle";
+  const maxRiddleAttempts = 3;
   const activeIdentity = profileQuery.data?.profileAddress ?? walletAddress ?? null;
   const activeProfileName = profileQuery.data?.name ?? (shouldUseLocalProfileAlias() ? localProfileQuery.data ?? null : null);
   const missingProfileError = shouldUseLocalProfileAlias()
@@ -97,8 +98,14 @@ const RoomLobby = () => {
     !isEmptyAddress(room?.opponent ?? "");
   const canSubmit =
     Boolean(walletAddress && room && room.status === "active" && (amOwner || amOpponent)) &&
-    ((amOwner && !room.ownerSubmission) || (amOpponent && !room.opponentSubmission));
+    (
+      isRiddleMode
+        ? (amOwner && (room.ownerAttemptsUsed ?? 0) < maxRiddleAttempts) ||
+          (amOpponent && (room.opponentAttemptsUsed ?? 0) < maxRiddleAttempts)
+        : (amOwner && !room.ownerSubmission) || (amOpponent && !room.opponentSubmission)
+    );
   const canResolve =
+    mode === "argue" &&
     Boolean(walletAddress && room && room.status !== "resolved" && room.ownerSubmission && room.opponentSubmission) &&
     isParticipant;
   const canForfeit =
@@ -148,13 +155,24 @@ const RoomLobby = () => {
         await registerLocalProfile(mode, walletAddress, provider, activeProfileName);
       }
       await submitEntry(mode, walletAddress, provider, roomId, submission.trim());
-      const resolutionStarted = Boolean(room) && ((amOwner && Boolean(room.opponentSubmission)) || (amOpponent && Boolean(room.ownerSubmission)));
+      const resolutionStarted =
+        mode === "riddle" ||
+        (Boolean(room) && ((amOwner && Boolean(room.opponentSubmission)) || (amOpponent && Boolean(room.ownerSubmission))));
       return { resolutionStarted };
     },
     onSuccess: async ({ resolutionStarted }) => {
       setSubmission("");
       await invalidateRoomState();
-      toast.success(resolutionStarted ? "Submission sent. Resolution is processing on-chain." : "Submission sent on-chain.");
+      if (resolutionStarted || isRiddleMode) {
+        await queryClient.invalidateQueries({ queryKey: ["profile", walletAddress] });
+      }
+      toast.success(
+        isRiddleMode
+          ? "Guess checked on-chain."
+          : resolutionStarted
+            ? "Submission sent. Resolution is processing on-chain."
+            : "Submission sent on-chain.",
+      );
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "Submission failed.");
@@ -425,6 +443,20 @@ const RoomLobby = () => {
 
                       <div className="rounded-2xl border border-border/70 bg-background/50 p-5">
                         <h3 className="font-heading text-2xl font-bold">{room.prompt}</h3>
+                        <p className="mt-3 text-sm text-muted-foreground">
+                          First correct answer wins the riddle immediately. Each player gets up to {maxRiddleAttempts} guesses.
+                        </p>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="rounded-2xl border border-border/70 bg-background/50 p-4">
+                          <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">{room.ownerName || modeMeta.ownerLabel} guesses used</p>
+                          <p className="mt-3 font-heading text-2xl font-bold">{room.ownerAttemptsUsed ?? 0} / {maxRiddleAttempts}</p>
+                        </div>
+                        <div className="rounded-2xl border border-border/70 bg-background/50 p-4">
+                          <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">{room.opponentName || modeMeta.opponentLabel} guesses used</p>
+                          <p className="mt-3 font-heading text-2xl font-bold">{room.opponentAttemptsUsed ?? 0} / {maxRiddleAttempts}</p>
+                        </div>
                       </div>
                     </>
                   ) : (
@@ -469,18 +501,14 @@ const RoomLobby = () => {
                   {canResolve && (
                     <div className="rounded-xl border border-border/60 bg-background/60 p-4 text-sm text-muted-foreground">
                       {resolveMutation.isPending
-                        ? isRiddleMode
-                          ? "Resolving the current riddle on-chain now."
-                          : "Resolving the verdict on-chain now."
-                        : isRiddleMode
-                          ? "Both guesses are locked. Resolve this riddle round on-chain below."
-                          : "Both submissions are locked. Resolve the verdict on-chain below."}
+                        ? "Resolving the verdict on-chain now."
+                        : "Both submissions are locked. Resolve the verdict on-chain below."}
                     </div>
                   )}
 
                   {canResolve && !resolveMutation.isPending && (
                     <Button variant="secondary" className="w-full py-6 text-base" onClick={() => resolveMutation.mutate()}>
-                      {isRiddleMode ? "Resolve Riddle" : "Resolve Verdict"}
+                      Resolve Verdict
                     </Button>
                   )}
                 </div>

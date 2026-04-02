@@ -14,6 +14,14 @@ type WalletWriteRequest = Parameters<WalletArenaClient["writeContract"]>[0];
 
 const EMPTY_ADDRESS = "0x0000000000000000000000000000000000000000";
 
+function getConfiguredCoreAddress(): Address {
+  if (!arenaEnv.vdtCoreAddress) {
+    throw new Error("Missing VerdictDotFun core contract address.");
+  }
+
+  return arenaEnv.vdtCoreAddress as Address;
+}
+
 function getLegacyConfiguredContractAddress(mode: ArenaMode): Address {
   const address = arenaEnv.contractAddresses[mode];
 
@@ -210,6 +218,9 @@ function parseRoom(mode: ArenaMode, raw: unknown): ArenaRoom | null {
     ownerScore: asNumber(record.owner_score),
     opponentScore: asNumber(record.opponent_score),
     verdictReasoning: asString(record.verdict_reasoning),
+    ownerAttemptsUsed: record.owner_submission_order === undefined ? undefined : asNumber(record.owner_submission_order),
+    opponentAttemptsUsed: record.opponent_submission_order === undefined ? undefined : asNumber(record.opponent_submission_order),
+    revealedAnswer: record.revealed_answer === undefined ? undefined : asString(record.revealed_answer),
   };
 }
 
@@ -370,15 +381,35 @@ export async function createRoom(
   },
 ) {
   const client = createWalletClient(account, provider);
-  const hash = await writeContractWithRetry(client, {
-    address: getLegacyConfiguredContractAddress(mode),
-    functionName: "create_room",
-    args:
-      mode === "argue"
-        ? [room.roomId, room.category, room.profileAddress ?? EMPTY_ADDRESS, room.argueStyle ?? "debate"]
-        : [room.roomId, room.category, room.profileAddress ?? EMPTY_ADDRESS],
-    value: 0n,
-  });
+  if (arenaEnv.hasVdtCoreAddress && !room.profileAddress) {
+    throw new Error("Create your VerdictDotFun profile before opening a room.");
+  }
+
+  const hash = await writeContractWithRetry(
+    client,
+    arenaEnv.hasVdtCoreAddress
+      ? {
+          address: getConfiguredCoreAddress(),
+          functionName: "create_room",
+          args: [
+            mode,
+            room.roomId,
+            room.category,
+            room.profileAddress ?? EMPTY_ADDRESS,
+            room.argueStyle ?? "debate",
+          ],
+          value: 0n,
+        }
+      : {
+          address: getLegacyConfiguredContractAddress(mode),
+          functionName: "create_room",
+          args:
+            mode === "argue"
+              ? [room.roomId, room.category, room.profileAddress ?? EMPTY_ADDRESS, room.argueStyle ?? "debate"]
+              : [room.roomId, room.category, room.profileAddress ?? EMPTY_ADDRESS],
+          value: 0n,
+        },
+  );
 
   void waitForReceipt(account, provider, hash, TransactionStatus.ACCEPTED).catch(() => undefined);
   return hash;

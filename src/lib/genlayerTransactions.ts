@@ -1,6 +1,6 @@
 import { TransactionStatus } from "genlayer-js/types";
 import type { Address } from "viem";
-import { createArenaClient } from "@/lib/genlayer";
+import { createArenaClient, getArenaChain } from "@/lib/genlayer";
 import type { BrowserEthereumProvider } from "@/lib/ethereum";
 
 const ACCEPTED_STATUS_CODES = new Set([5, 7]);
@@ -130,6 +130,6 @@ export async function waitForConsensusReceipt(
   }
 
   throw new Error(
-    `Transaction ${normalizedHash} is still ${lastKnownStatus}. Bradbury is slow right now; keep monitoring the explorer and retry the refresh shortly.`,
+    `Transaction ${normalizedHash} is still ${lastKnownStatus} on ${getArenaChain().name}. Keep monitoring the explorer and retry the refresh shortly.`,
   );
 }

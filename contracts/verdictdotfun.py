@@ -201,12 +201,19 @@ class VerdictDotFun(gl.Contract):
         self.room_to_category[normalized_id] = category.strip()
         self.approved_games[room_contract] = True
 
-        GameModeContract(room_contract).emit(on="accepted").create_room(
-            normalized_id,
-            category,
-            normalized_profile,
-            normalized_style,
-        )
+        if normalized_mode == "argue":
+            GameModeContract(room_contract).emit(on="accepted").create_room(
+                normalized_id,
+                category,
+                normalized_profile,
+                normalized_style,
+            )
+        else:
+            GameModeContract(room_contract).emit(on="accepted").create_room(
+                normalized_id,
+                category,
+                normalized_profile,
+            )
         return room_contract
 
     @gl.public.write

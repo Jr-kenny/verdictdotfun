@@ -165,6 +165,10 @@ class ArgueGame(gl.Contract):
                 raise Exception("You already submitted your argument.")
             room.opponent_submission = text
 
+        if room.owner_submission and room.opponent_submission:
+            self._finalize_room(room)
+            return
+
         self.rooms[room.id] = room
 
     @gl.public.write

@@ -13,6 +13,7 @@ ZERO_ADDRESS = Address("0x0000000000000000000000000000000000000000")
 MODE = "riddle"
 RIDDLE_COUNT = 3
 RIDDLES_TO_WIN = 3
+MAX_ATTEMPTS_PER_RIDDLE = 3
 
 
 @gl.contract_interface
@@ -175,33 +176,61 @@ class RiddleGame(gl.Contract):
             raise Exception("Riddle guesses must be at least 2 characters.")
 
         participant = self._participant_profile(room)
-        room.submission_count += 1
+        accepted_answers = [self.room_answers.get(self._current_riddle_key(room), "")]
+        alias_blob = self.room_aliases.get(self._current_riddle_key(room), "")
+        if alias_blob:
+            accepted_answers.extend(part.strip() for part in alias_blob.split("|") if part.strip())
+        canonical_answer = accepted_answers[0] if accepted_answers else ""
+
+        room.submission_count += u16(1)
+        riddle_number = int(room.current_question_index)
 
         if participant == room.owner:
-            if room.owner_submission:
-                raise Exception("You already submitted your guess for this riddle.")
+            if int(room.owner_submission_order) >= MAX_ATTEMPTS_PER_RIDDLE:
+                raise Exception(f"You already used all {MAX_ATTEMPTS_PER_RIDDLE} guesses for this riddle.")
             room.owner_submission = text
-            room.owner_submission_order = room.submission_count
+            room.owner_submission_order += u16(1)
+            attempt_number = int(room.owner_submission_order)
+            player_name = room.owner_name
         else:
-            if room.opponent_submission:
-                raise Exception("You already submitted your guess for this riddle.")
+            if int(room.opponent_submission_order) >= MAX_ATTEMPTS_PER_RIDDLE:
+                raise Exception(f"You already used all {MAX_ATTEMPTS_PER_RIDDLE} guesses for this riddle.")
             room.opponent_submission = text
-            room.opponent_submission_order = room.submission_count
+            room.opponent_submission_order += u16(1)
+            attempt_number = int(room.opponent_submission_order)
+            player_name = room.opponent_name
+
+        is_correct = self._matches_any_answer(self._normalize_answer(text), accepted_answers)
+        if is_correct:
+            room.revealed_answer = canonical_answer
+            if participant == room.owner:
+                room.owner_score += u16(1)
+            else:
+                room.opponent_score += u16(1)
+
+            room.verdict_reasoning = f"{player_name} solved riddle {riddle_number} on guess {attempt_number}."
+            self._complete_current_riddle(room)
+            return
+
+        remaining_guesses = MAX_ATTEMPTS_PER_RIDDLE - attempt_number
+        guess_word = "guess" if remaining_guesses == 1 else "guesses"
+        room.verdict_reasoning = f"{player_name} missed riddle {riddle_number}. {remaining_guesses} {guess_word} left for them this round."
+
+        if (
+            int(room.owner_submission_order) >= MAX_ATTEMPTS_PER_RIDDLE
+            and int(room.opponent_submission_order) >= MAX_ATTEMPTS_PER_RIDDLE
+        ):
+            room.revealed_answer = canonical_answer
+            room.verdict_reasoning = f"Neither player solved riddle {riddle_number} after {MAX_ATTEMPTS_PER_RIDDLE} guesses each."
+            self._complete_current_riddle(room)
+            return
 
         self.rooms[room.id] = room
 
     @gl.public.write
     def resolve_room(self, room_id: str):
-        room = self._require_room(room_id)
-
-        if room.status == "resolved":
-            raise Exception("Room already has a verdict.")
-        if room.opponent == ZERO_ADDRESS:
-            raise Exception("A riddle room needs two players.")
-        if not room.owner_submission or not room.opponent_submission:
-            raise Exception("Both players must submit before this round can resolve.")
-
-        self._resolve_current_riddle(room)
+        del room_id
+        raise Exception("Riddle guesses resolve immediately on submission.")
 
     @gl.public.write
     def forfeit_room(self, room_id: str):
@@ -418,34 +447,7 @@ Rules:
 
         return True
 
-    def _resolve_current_riddle(self, room: RiddleRoom):
-        accepted_answers = [self.room_answers.get(self._current_riddle_key(room), "")]
-        alias_blob = self.room_aliases.get(self._current_riddle_key(room), "")
-        if alias_blob:
-            accepted_answers.extend(part.strip() for part in alias_blob.split("|") if part.strip())
-
-        owner_exact = self._matches_any_answer(self._normalize_answer(room.owner_submission), accepted_answers)
-        opponent_exact = self._matches_any_answer(self._normalize_answer(room.opponent_submission), accepted_answers)
-        canonical_answer = accepted_answers[0] if accepted_answers else ""
-
-        if owner_exact and not opponent_exact:
-            room.owner_score += 1
-            room.verdict_reasoning = f"{room.owner_name} solved riddle {int(room.current_question_index)} while {room.opponent_name} missed it."
-        elif opponent_exact and not owner_exact:
-            room.opponent_score += 1
-            room.verdict_reasoning = f"{room.opponent_name} solved riddle {int(room.current_question_index)} while {room.owner_name} missed it."
-        elif owner_exact and opponent_exact:
-            if int(room.owner_submission_order) <= int(room.opponent_submission_order):
-                room.owner_score += 1
-                room.verdict_reasoning = f"Both solved riddle {int(room.current_question_index)}, but {room.owner_name} locked the correct answer first."
-            else:
-                room.opponent_score += 1
-                room.verdict_reasoning = f"Both solved riddle {int(room.current_question_index)}, but {room.opponent_name} locked the correct answer first."
-        else:
-            room.verdict_reasoning = f"Neither player solved riddle {int(room.current_question_index)}."
-
-        room.revealed_answer = canonical_answer
-
+    def _complete_current_riddle(self, room: RiddleRoom):
         if int(room.owner_score) >= RIDDLES_TO_WIN:
             self._finalize_room(room, room.owner, room.opponent, f"{room.owner_name} solved three riddles first.")
             return
