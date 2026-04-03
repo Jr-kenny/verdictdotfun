@@ -10,6 +10,12 @@ Instead of treating the blockchain like a place to merely store outcomes, Verdic
 
 The current shipped modes are `argue` and `riddle`.
 
+## Deployed contracts
+
+- Core (`verdictdotfun`): [0x26B1ed21bC73895531446e4B1B913F0a87e8BFA1](https://studio.genlayer.com/contracts?import-contract=0x26B1ed21bC73895531446e4B1B913F0a87e8BFA1)
+- Mode (`argue`): [0x70836563637f4EdeC812e1ECA58AC6a21591B048](https://studio.genlayer.com/contracts?import-contract=0x70836563637f4EdeC812e1ECA58AC6a21591B048)
+- Mode (`riddle`): [0xF50432BB1A90DE73A5e1D128b272E7294EE353C1](https://studio.genlayer.com/contracts?import-contract=0xF50432BB1A90DE73A5e1D128b272E7294EE353C1)
+
 ## Why this project exists
 
 Most on-chain games still feel like transaction demos. Users click through a sequence of writes, but the game loop itself is not really encoded into the contract flow.
