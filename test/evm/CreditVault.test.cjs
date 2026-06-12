@@ -110,3 +110,32 @@ describe("CreditVault redeem", () => {
     ).to.be.revertedWithCustomError(vault, "InsufficientVaultBalance");
   });
 });
+
+describe("CreditVault reentrancy", () => {
+  // A token that tries to re-enter redeem() on transfer-out. The re-entrant call
+  // runs with msg.sender == token, so `onlyBridge` rejects it first; `nonReentrant`
+  // backstops the bridge-initiated path. Either way the attack must fail atomically
+  // and leave no partial drain.
+  it("blocks reentrancy during ERC20 redeem (attack reverts, no drain)", async () => {
+    const [owner, bridge, user] = await ethers.getSigners();
+    const Vault = await ethers.getContractFactory("CreditVault");
+    const vault = await Vault.deploy(owner.address, bridge.address);
+    const RT = await ethers.getContractFactory("ReentrantToken");
+    const rt = await RT.deploy();
+    await rt.setVault(await vault.getAddress());
+    await rt.mint(user.address, 1000n);
+    await vault.connect(owner).setTokenAllowed(await rt.getAddress(), true);
+    await rt.connect(user).approve(await vault.getAddress(), 1000n);
+    await vault.connect(user).depositToken(await rt.getAddress(), 1000n, PROFILE);
+
+    // The re-entrant redeem inside transfer reverts, bubbling up to revert the whole call.
+    await expect(
+      vault.connect(bridge).redeem(user.address, await rt.getAddress(), 500n, 1n)
+    ).to.be.reverted;
+
+    // No partial drain: vault still custodies all 1000, redeemId 1 never marked processed.
+    expect(await rt.balanceOf(await vault.getAddress())).to.equal(1000n);
+    expect(await rt.balanceOf(user.address)).to.equal(0n);
+    expect(await vault.processedRedeem(1n)).to.equal(false);
+  });
+});
