@@ -76,6 +76,28 @@ contract CreditVault is ReentrancyGuard, Pausable, Ownable {
         emit CreditPurchased(msg.sender, token, profile, amount, nonce);
     }
 
+    function redeem(address user, address token, uint256 amount, uint256 redeemId)
+        external
+        onlyBridge
+        whenNotPaused
+        nonReentrant
+    {
+        if (user == address(0)) revert ZeroAddress();
+        if (amount == 0) revert ZeroAmount();
+        if (processedRedeem[redeemId]) revert RedeemAlreadyProcessed();
+        processedRedeem[redeemId] = true;
+
+        if (token == ETH) {
+            if (address(this).balance < amount) revert InsufficientVaultBalance();
+            (bool ok, ) = payable(user).call{value: amount}("");
+            if (!ok) revert EthTransferFailed();
+        } else {
+            if (IERC20(token).balanceOf(address(this)) < amount) revert InsufficientVaultBalance();
+            IERC20(token).safeTransfer(user, amount);
+        }
+        emit CreditRedeemed(user, token, amount, redeemId);
+    }
+
     function setTokenAllowed(address token, bool allowed) external onlyOwner {
         if (token == address(0)) revert ZeroAddress();
         tokenAllowed[token] = allowed;
