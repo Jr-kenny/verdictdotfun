@@ -81,3 +81,48 @@ def test_verdictdotfun_applies_match_results_for_approved_game_contracts(direct_
     profile_data = core.get_profile_by_address(profile)
     assert profile_data["wins"] == 1
     assert profile_data["xp"] == 100
+
+
+# ---- generic mode registry (sub-project #1, Plan 1B) ----
+MODE_X = "0x1111110000000000000000000000000000000011"
+MODE_Y = "0x2222220000000000000000000000000000000022"
+
+
+def test_register_and_lookup_modes(direct_vm, direct_deploy, direct_alice):
+    direct_vm.sender = direct_alice
+    core = direct_deploy("contracts/verdictdotfun.py")
+    core.register_mode("argue", MODE_X)
+    core.register_mode("riddle", MODE_Y)
+
+    assert str(core.get_mode_contract("argue")).lower() == MODE_X
+    assert str(core.get_mode_contract("riddle")).lower() == MODE_Y
+    assert core.is_mode("argue") is True
+    assert core.is_mode("nope") is False
+    names = list(core.get_mode_names())
+    assert "argue" in names and "riddle" in names
+
+
+def test_register_new_mode_beyond_argue_riddle(direct_vm, direct_deploy, direct_alice):
+    direct_vm.sender = direct_alice
+    core = direct_deploy("contracts/verdictdotfun.py")
+    core.register_mode("trivia", MODE_X)
+    assert core.is_mode("trivia") is True
+    assert str(core.get_mode_contract("trivia")).lower() == MODE_X
+    assert core.is_game_contract(MODE_X) is True
+
+
+def test_deregister_mode_revokes(direct_vm, direct_deploy, direct_alice):
+    direct_vm.sender = direct_alice
+    core = direct_deploy("contracts/verdictdotfun.py")
+    core.register_mode("argue", MODE_X)
+    core.deregister_mode("argue")
+    assert core.is_mode("argue") is False
+    assert core.is_game_contract(MODE_X) is False
+
+
+def test_register_mode_owner_only(direct_vm, direct_deploy, direct_alice, direct_bob):
+    direct_vm.sender = direct_alice
+    core = direct_deploy("contracts/verdictdotfun.py")
+    direct_vm.sender = direct_bob
+    with direct_vm.expect_revert("owner"):
+        core.register_mode("argue", MODE_X)

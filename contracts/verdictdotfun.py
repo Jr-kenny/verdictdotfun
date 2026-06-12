@@ -73,6 +73,9 @@ class VerdictDotFun(gl.Contract):
     debate_contract: Address
     convince_contract: Address
     riddle_contract: Address
+    modes: TreeMap[str, Address]
+    mode_names: DynArray[str]
+    credit_ledger: Address
 
     def __init__(
         self,
@@ -91,6 +94,7 @@ class VerdictDotFun(gl.Contract):
         self.debate_contract = ZERO_ADDRESS
         self.convince_contract = ZERO_ADDRESS
         self.riddle_contract = ZERO_ADDRESS
+        self.credit_ledger = ZERO_ADDRESS
 
         root = gl.storage.Root.get()
         root.upgraders.get().append(gl.message.sender_address)
@@ -247,18 +251,58 @@ class VerdictDotFun(gl.Contract):
         self._require_owner()
         normalized_mode = self._normalize_mode(mode)
         normalized_address = self._normalize_address(contract_address)
-        previous = self._contract_for_mode(normalized_mode)
+        self._register_mode_internal(normalized_mode, normalized_address)
+
+    @gl.public.write
+    def register_mode(self, name: str, contract_address: Address):
+        self._require_owner()
+        normalized_mode = self._normalize_mode(name)
+        normalized_address = self._normalize_address(contract_address)
+        self._register_mode_internal(normalized_mode, normalized_address)
+
+    @gl.public.write
+    def deregister_mode(self, name: str):
+        self._require_owner()
+        normalized_mode = self._normalize_mode(name)
+        address = self.modes.get(normalized_mode, ZERO_ADDRESS)
+        if address != ZERO_ADDRESS:
+            self.approved_games[address] = False
+            self._approve_in_ledger(address, False)
+        self.modes[normalized_mode] = ZERO_ADDRESS
+        self._sync_legacy_mode_field(normalized_mode, ZERO_ADDRESS)
+
+    @gl.public.write
+    def set_credit_ledger(self, ledger: Address):
+        self._require_owner()
+        self.credit_ledger = self._normalize_address(ledger)
+
+    def _register_mode_internal(self, normalized_mode: str, normalized_address: Address):
+        previous = self.modes.get(normalized_mode, ZERO_ADDRESS)
 
         if previous != ZERO_ADDRESS and previous != normalized_address:
             self.approved_games[previous] = False
 
-        if normalized_mode == "argue":
-            self.debate_contract = normalized_address
-        else:
-            self.riddle_contract = normalized_address
+        if normalized_mode not in self.modes:
+            self.mode_names.append(normalized_mode)
+        self.modes[normalized_mode] = normalized_address
+        self._sync_legacy_mode_field(normalized_mode, normalized_address)
 
         if normalized_address != ZERO_ADDRESS:
             self.approved_games[normalized_address] = True
+            self._approve_in_ledger(normalized_address, True)
+
+    def _sync_legacy_mode_field(self, normalized_mode: str, normalized_address: Address):
+        # Keep the legacy fixed fields in sync for storage/back-compat.
+        if normalized_mode == "argue":
+            self.debate_contract = normalized_address
+        elif normalized_mode == "riddle":
+            self.riddle_contract = normalized_address
+
+    def _approve_in_ledger(self, mode_address: Address, allowed: bool):
+        if self.credit_ledger == ZERO_ADDRESS:
+            return
+        ledger = gl.get_contract_at(self.credit_ledger)
+        ledger.emit(on="accepted").approve_caller(mode_address, allowed)
 
     @gl.public.write
     def initialize_mode_contract(self, mode: str, code: str) -> Address:
@@ -354,6 +398,14 @@ class VerdictDotFun(gl.Contract):
     @gl.public.view
     def get_mode_contract(self, mode: str) -> Address:
         return self._contract_for_mode(self._normalize_mode(mode))
+
+    @gl.public.view
+    def is_mode(self, name: str) -> bool:
+        return self.modes.get(self._normalize_mode(name), ZERO_ADDRESS) != ZERO_ADDRESS
+
+    @gl.public.view
+    def get_mode_names(self) -> DynArray[str]:
+        return self.mode_names
 
     @gl.public.view
     def get_leaderboard(self, limit: u32 = u32(20)) -> DynArray[Address]:
@@ -454,11 +506,11 @@ class VerdictDotFun(gl.Contract):
 
     def _normalize_mode(self, mode: str) -> str:
         normalized = mode.strip().lower()
-        if normalized in ["argue", "riddle"]:
-            return normalized
         if normalized in ["debate", "convince"]:
             return "argue"
-        raise Exception("Unsupported game mode.")
+        if not normalized:
+            raise Exception("Unsupported game mode.")
+        return normalized
 
     def _normalize_argue_style(self, argue_style: str) -> str:
         normalized = argue_style.strip().lower()
@@ -470,15 +522,17 @@ class VerdictDotFun(gl.Contract):
 
     def _contract_for_mode(self, mode: str) -> Address:
         normalized_mode = self._normalize_mode(mode)
-        if normalized_mode == "argue":
-            return self.debate_contract
-        return self.riddle_contract
+        return self.modes.get(normalized_mode, ZERO_ADDRESS)
 
     def _mode_salt(self, mode: str) -> u256:
         normalized_mode = self._normalize_mode(mode)
         if normalized_mode == "argue":
             return u256(1)
-        return u256(2)
+        if normalized_mode == "riddle":
+            return u256(2)
+        # Deterministic salt for any other mode, derived from its name.
+        digest = hashlib.sha256(normalized_mode.encode("utf-8")).digest()
+        return u256(int.from_bytes(digest[:8], "big") | 0x100)
 
     def _initialize_mode_contract_internal(self, mode: str, code: str) -> Address:
         normalized_mode = self._normalize_mode(mode)
@@ -496,12 +550,7 @@ class VerdictDotFun(gl.Contract):
             on="accepted",
         )
 
-        if normalized_mode == "argue":
-            self.debate_contract = child_address
-        else:
-            self.riddle_contract = child_address
-
-        self.approved_games[child_address] = True
+        self._register_mode_internal(normalized_mode, child_address)
         return child_address
 
     def _normalize_address(self, value: typing.Any) -> Address:

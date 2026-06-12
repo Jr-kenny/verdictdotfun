@@ -28,6 +28,8 @@
     "deploy:profile:nft:operator": "hardhat run deploy/set-profile-nft-operator.cjs --network baseSepolia --config hardhat.config.cjs",
     "deploy:profile:rewarders": "hardhat run deploy/set-profile-rewarders.cjs --network baseSepolia --config hardhat.config.cjs",
     "contract:test": ".\\.venv\\Scripts\\python -m pytest tests/direct -v",
+    "test:gl": ".venv/bin/pytest tests/direct -v",
+    "lint:gl": ".venv/bin/genvm-lint check",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:evm": "hardhat test --config hardhat.config.cjs"
