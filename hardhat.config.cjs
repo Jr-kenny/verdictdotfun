@@ -1,4 +1,5 @@
 require("@nomicfoundation/hardhat-ethers");
+require("@nomicfoundation/hardhat-chai-matchers");
 require("@nomicfoundation/hardhat-verify");
 require("@openzeppelin/hardhat-upgrades");
 require("dotenv").config();
@@ -32,6 +33,7 @@ module.exports = {
   },
   paths: {
     sources: "./contracts/evm",
+    tests: "./test/evm",
     cache: "./hardhat-cache",
     artifacts: "./hardhat-artifacts",
   },

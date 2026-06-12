@@ -12,6 +12,10 @@ dist
 dist-ssr
 /.pytest_cache
 /artifacts
+/hardhat-cache
+/hardhat-artifacts
+/.venv
+/.venv-test
 /Lib
 /Scripts
 /Include

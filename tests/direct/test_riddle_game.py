@@ -27,7 +27,7 @@ def _mock_riddle_pack(direct_vm, room_id: str, category: str = "Tech"):
 
 
 def test_riddle_match_runs_for_three_rounds_and_first_to_three_wins(direct_vm, direct_deploy, direct_alice, direct_bob):
-    contract = direct_deploy("contracts/riddle_game.py", ZERO_ADDRESS)
+    contract = direct_deploy("contracts/riddle_game.py", ZERO_ADDRESS, False, 0)
     _mock_riddle_pack(direct_vm, "ROOM06")
 
     direct_vm.sender = direct_alice
@@ -63,11 +63,14 @@ def test_riddle_match_runs_for_three_rounds_and_first_to_three_wins(direct_vm, d
     contract.submit_entry("ROOM06", "ceiling fan")
 
     resolved = contract.get_room("ROOM06")
-    assert resolved.status == "resolved"
+    assert resolved.status == "provisional"
     assert resolved.winner == resolved.owner
     assert resolved.owner_score == 3
     assert resolved.opponent_score == 0
     assert "solved three riddles first" in resolved.verdict_reasoning
+
+    contract.finalize_room("ROOM06")
+    assert contract.get_room("ROOM06").status == "resolved"
 
 
 def test_riddle_allows_three_guesses_each_before_advancing_to_next_riddle(direct_vm, direct_deploy, direct_alice, direct_bob):
@@ -187,6 +190,73 @@ def test_riddle_forfeit_resolves_the_other_player_as_winner(direct_vm, direct_de
     contract.forfeit_room("ROOM08")
 
     room = contract.get_room("ROOM08")
-    assert room.status == "resolved"
+    assert room.status == "provisional"
     assert room.winner == room.owner
+    assert room.provisional_at > 0
     assert "wins by forfeit" in room.verdict_reasoning
+
+
+# ---- two-phase settlement + appeals (Plan 1C) ----
+def _riddle_forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, rid, window=3600):
+    contract = direct_deploy("contracts/riddle_game.py", ZERO_ADDRESS, False, window)
+    _mock_riddle_pack(direct_vm, rid)
+    direct_vm.sender = direct_alice
+    contract.register_profile("Alice")
+    contract.create_room(rid, "Tech", ZERO_ADDRESS, 0)
+    direct_vm.sender = direct_bob
+    contract.register_profile("Bob")
+    contract.join_room(rid)
+    contract.forfeit_room(rid)  # Bob quits -> Alice provisional winner, Bob loser
+    return contract
+
+
+def test_riddle_loser_can_file_one_appeal(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _riddle_forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "RAP01")
+    direct_vm.sender = direct_bob
+    contract.file_appeal("RAP01", "My connection dropped before I could guess.")
+    assert contract.get_room("RAP01").appeal_state == "filed"
+    with direct_vm.expect_revert("already been filed"):
+        contract.file_appeal("RAP01", "second attempt at an appeal")
+
+
+def test_riddle_winner_cannot_appeal(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _riddle_forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "RAP02")
+    direct_vm.sender = direct_alice
+    with direct_vm.expect_revert("losing player"):
+        contract.file_appeal("RAP02", "I want a bigger margin of victory")
+
+
+def test_riddle_appeal_upheld_resolves(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _riddle_forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "RJU01")
+    direct_vm.sender = direct_bob
+    contract.file_appeal("RJU01", "I lagged but honestly the forfeit stands; weak grounds.")
+    direct_vm.mock_llm(r"(?s).*APPEAL REVIEW.*",
+                       {"decision": "upheld", "reasoning": "No evidence of an unfair result."})
+    contract.judge_appeal("RJU01")
+    room = contract.get_room("RJU01")
+    assert room.appeal_result == "upheld"
+    assert room.status == "resolved"
+
+
+def test_riddle_appeal_overturned_voids(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _riddle_forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "RJU02")
+    direct_vm.sender = direct_bob
+    contract.file_appeal("RJU02", "Verified outage knocked me offline mid-match.")
+    direct_vm.mock_llm(r"(?s).*APPEAL REVIEW.*",
+                       {"decision": "overturned", "reasoning": "Genuine disconnect; void."})
+    contract.judge_appeal("RJU02")
+    room = contract.get_room("RJU02")
+    assert room.appeal_result == "overturned"
+    assert room.status == "void"
+
+
+def test_riddle_finalize_blocked_while_window_open(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _riddle_forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "RFI01", window=3600)
+    with direct_vm.expect_revert("Challenge window is still open"):
+        contract.finalize_room("RFI01")
+
+
+def test_riddle_finalize_after_window_resolves(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _riddle_forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "RFI02", window=0)
+    contract.finalize_room("RFI02")
+    assert contract.get_room("RFI02").status == "resolved"

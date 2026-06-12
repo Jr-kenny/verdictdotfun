@@ -11,6 +11,7 @@ except ModuleNotFoundError:
 
 ZERO_ADDRESS = Address("0x0000000000000000000000000000000000000000")
 MODE = "argue"
+CHALLENGE_WINDOW_SECONDS = 3600
 
 
 @gl.contract_interface
@@ -22,6 +23,15 @@ class VerdictDotFunCore:
 
     class Write:
         def apply_match_result(self, profile: Address, match_id: str, did_win: bool, mode: str, /) -> None: ...
+
+
+@gl.contract_interface
+class CreditLedgerIface:
+    class Write:
+        def open_escrow(self, room_id: str, mode: str, player_a: Address, player_b: Address, atto_stake: u256, /) -> None: ...
+        def set_provisional(self, room_id: str, winner: Address, /) -> None: ...
+        def finalize_winner(self, room_id: str, winner: Address, /) -> None: ...
+        def finalize_void(self, room_id: str, /) -> None: ...
 
 
 @allow_storage
@@ -50,6 +60,11 @@ class ArgueRoom:
     owner_score: u16
     opponent_score: u16
     verdict_reasoning: str
+    stake: u256
+    provisional_at: u256
+    appeal_state: str
+    appeal_reason: str
+    appeal_result: str
 
 
 class ArgueGame(gl.Contract):
@@ -59,11 +74,15 @@ class ArgueGame(gl.Contract):
     local_profiles: TreeMap[Address, LocalProfile]
     rooms: TreeMap[str, ArgueRoom]
     room_ids: DynArray[str]
+    credit_ledger: Address
+    challenge_window_seconds: u256
 
-    def __init__(self, core_contract: typing.Any = ZERO_ADDRESS, single_room_only: bool = False):
+    def __init__(self, core_contract: typing.Any = ZERO_ADDRESS, single_room_only: bool = False, challenge_window_seconds: u256 = u256(CHALLENGE_WINDOW_SECONDS)):
         self.owner = gl.message.sender_address
         self.core_contract = self._normalize_address(core_contract)
         self.single_room_only = single_room_only
+        self.credit_ledger = ZERO_ADDRESS
+        self.challenge_window_seconds = u256(int(challenge_window_seconds))
 
         root = gl.storage.Root.get()
         root.upgraders.get().append(gl.message.sender_address)
@@ -83,7 +102,12 @@ class ArgueGame(gl.Contract):
         self.local_profiles[gl.message.sender_address] = LocalProfile(clean_name)
 
     @gl.public.write
-    def create_room(self, room_id: str, category: str, owner_profile: Address = ZERO_ADDRESS, argue_style: str = "debate"):
+    def set_credit_ledger(self, ledger: Address):
+        self._require_owner()
+        self.credit_ledger = self._normalize_address(ledger)
+
+    @gl.public.write
+    def create_room(self, room_id: str, category: str, owner_profile: Address = ZERO_ADDRESS, argue_style: str = "debate", stake: u256 = u256(0)):
         owner_profile = self._normalize_address(owner_profile)
         normalized_id = room_id.strip().upper()
         normalized_category = self._normalize_category(category)
@@ -119,6 +143,11 @@ class ArgueGame(gl.Contract):
             owner_score=u16(0),
             opponent_score=u16(0),
             verdict_reasoning="",
+            stake=u256(int(stake)),
+            provisional_at=u256(0),
+            appeal_state="none",
+            appeal_reason="",
+            appeal_result="",
         )
         self.room_ids.append(normalized_id)
 
@@ -138,6 +167,7 @@ class ArgueGame(gl.Contract):
         room.opponent_name = self._require_player_name(opponent_profile)
         room.status = "ready_to_start"
         self.rooms[room.id] = room
+        self._open_escrow_if_staked(room)
 
     @gl.public.write
     def submit_entry(self, room_id: str, submission: str):
@@ -220,16 +250,12 @@ class ArgueGame(gl.Contract):
             return self._is_valid_verdict(leader_result.calldata)
 
         verdict = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
-        loser = room.opponent if verdict["winner"] == "owner" else room.owner
 
-        room.status = "resolved"
-        room.winner = room.owner if verdict["winner"] == "owner" else room.opponent
         room.owner_score = verdict["owner_score"]
         room.opponent_score = verdict["opponent_score"]
         room.verdict_reasoning = verdict["reasoning"]
-        self.rooms[room.id] = room
-
-        self._emit_profile_result(room.id, room.winner, loser)
+        winner = room.owner if verdict["winner"] == "owner" else room.opponent
+        self._enter_provisional(room, winner)
 
     @gl.public.write
     def forfeit_room(self, room_id: str):
@@ -246,14 +272,87 @@ class ArgueGame(gl.Contract):
         winner_name = room.opponent_name if role == "owner" else room.owner_name
         quitter_name = room.owner_name if role == "owner" else room.opponent_name
 
-        room.status = "resolved"
-        room.winner = winner
         room.owner_score = u16(0 if role == "owner" else 100)
         room.opponent_score = u16(100 if role == "owner" else 0)
         room.verdict_reasoning = f"{quitter_name} quit the room, so {winner_name} wins by forfeit."
+        self._enter_provisional(room, winner)
+
+    @gl.public.write
+    def file_appeal(self, room_id: str, reason: str):
+        room = self._require_room(room_id)
+        if room.status != "provisional":
+            raise gl.vm.UserError("[EXPECTED] Only provisional rooms can be appealed.")
+        if room.appeal_state != "none":
+            raise gl.vm.UserError("[EXPECTED] An appeal has already been filed for this room.")
+
+        elapsed = self._now_epoch() - int(room.provisional_at)
+        if elapsed >= int(self.challenge_window_seconds):
+            raise gl.vm.UserError("[EXPECTED] The challenge window has closed.")
+
+        role = self._participant_role(room)
+        identity = room.owner if role == "owner" else room.opponent
+        loser = self._resolved_loser(room)
+        if identity != loser:
+            raise gl.vm.UserError("[EXPECTED] Only the losing player can file an appeal.")
+
+        cleaned = reason.strip()
+        if len(cleaned) < 8:
+            raise gl.vm.UserError("[EXPECTED] Appeal reason must be at least 8 characters.")
+        if len(cleaned) > 600:
+            raise gl.vm.UserError("[EXPECTED] Appeal reason must be 600 characters or fewer.")
+
+        room.appeal_state = "filed"
+        room.appeal_reason = cleaned
         self.rooms[room.id] = room
 
-        self._emit_profile_result(room.id, winner, quitter)
+    @gl.public.write
+    def judge_appeal(self, room_id: str):
+        room = self._require_room(room_id)
+        if room.status != "provisional":
+            raise gl.vm.UserError("[EXPECTED] Room is not awaiting a verdict.")
+        if room.appeal_state != "filed":
+            raise gl.vm.UserError("[EXPECTED] No appeal is pending for this room.")
+
+        prompt = self._build_appeal_prompt(room)
+
+        def leader_fn():
+            response = gl.nondet.exec_prompt(prompt, response_format="json")
+            return self._normalize_appeal(response)
+
+        def validator_fn(leaders_res: gl.vm.Result) -> bool:
+            if not isinstance(leaders_res, gl.vm.Return):
+                return False
+            try:
+                validator = leader_fn()
+            except Exception:
+                return False
+            return validator["decision"] == leaders_res.calldata["decision"]
+
+        decision = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
+
+        room.appeal_state = "judged"
+        room.appeal_result = decision["decision"]
+        room.verdict_reasoning = room.verdict_reasoning + " | Appeal: " + decision["reasoning"]
+
+        if decision["decision"] == "upheld":
+            self.rooms[room.id] = room
+            self._settle_winner(room)
+        else:
+            room.status = "void"
+            self.rooms[room.id] = room
+            self._settle_void(room)
+
+    @gl.public.write
+    def finalize_room(self, room_id: str):
+        room = self._require_room(room_id)
+        if room.status != "provisional":
+            raise gl.vm.UserError("[EXPECTED] Room is not awaiting finalization.")
+        if room.appeal_state == "filed":
+            raise gl.vm.UserError("[EXPECTED] Resolve the pending appeal before finalizing.")
+        elapsed = self._now_epoch() - int(room.provisional_at)
+        if elapsed < int(self.challenge_window_seconds):
+            raise gl.vm.UserError("[EXPECTED] Challenge window is still open.")
+        self._settle_winner(room)
 
     @gl.public.write
     def sync_profile_results(self, room_id: str):
@@ -298,6 +397,11 @@ class ArgueGame(gl.Contract):
                 owner_score=u16(0),
                 opponent_score=u16(0),
                 verdict_reasoning="",
+                stake=u256(0),
+                provisional_at=u256(0),
+                appeal_state="none",
+                appeal_reason="",
+                appeal_result="",
             ),
         )
 
@@ -485,6 +589,75 @@ Rules:
         core = self._core()
         if room.owner == ZERO_ADDRESS or core.view().get_profile_owner(room.owner) != sender:
             raise Exception("Only the room owner can start this room.")
+
+    def _now_epoch(self) -> int:
+        raw = gl.message_raw["datetime"]
+        if hasattr(raw, "timestamp"):
+            return int(raw.timestamp())
+        import datetime as _dt
+        return int(_dt.datetime.fromisoformat(str(raw).replace("Z", "+00:00")).timestamp())
+
+    def _enter_provisional(self, room: ArgueRoom, winner: Address):
+        room.status = "provisional"
+        room.winner = winner
+        room.provisional_at = u256(self._now_epoch())
+        self.rooms[room.id] = room
+        if self.credit_ledger != ZERO_ADDRESS and int(room.stake) > 0:
+            CreditLedgerIface(self.credit_ledger).emit(on="accepted").set_provisional(room.id, winner)
+
+    def _open_escrow_if_staked(self, room: ArgueRoom):
+        if self.credit_ledger == ZERO_ADDRESS:
+            return
+        if int(room.stake) <= 0:
+            return
+        CreditLedgerIface(self.credit_ledger).emit(on="accepted").open_escrow(
+            room.id, MODE, room.owner, room.opponent, room.stake
+        )
+
+    def _settle_winner(self, room: ArgueRoom):
+        room.status = "resolved"
+        self.rooms[room.id] = room
+        loser = self._resolved_loser(room)
+        if self.credit_ledger != ZERO_ADDRESS and int(room.stake) > 0:
+            CreditLedgerIface(self.credit_ledger).emit(on="accepted").finalize_winner(room.id, room.winner)
+        self._emit_profile_result(room.id, room.winner, loser)
+
+    def _settle_void(self, room: ArgueRoom):
+        if self.credit_ledger != ZERO_ADDRESS and int(room.stake) > 0:
+            CreditLedgerIface(self.credit_ledger).emit(on="accepted").finalize_void(room.id)
+
+    def _build_appeal_prompt(self, room: ArgueRoom) -> str:
+        return f"""APPEAL REVIEW — you are the impartial judge for a wager match.
+
+A provisional result was reached. The losing player has appealed. Decide whether the
+provisional result should stand ("upheld") or be voided and stakes refunded ("overturned").
+
+Overturn ONLY when the appeal shows the result was unfair due to a genuine technical
+fault (e.g., a verified disconnect that prevented play), NOT mere disagreement with the
+verdict or a desire to replay.
+
+Match prompt: {room.prompt}
+Provisional verdict reasoning: {room.verdict_reasoning}
+Owner score: {int(room.owner_score)}  Opponent score: {int(room.opponent_score)}
+Appeal reason from the losing player: {room.appeal_reason}
+
+Return JSON: {{"decision": "upheld" | "overturned", "reasoning": "<one or two sentences>"}}"""
+
+    def _normalize_appeal(self, response: typing.Any) -> typing.Dict[str, str]:
+        if not isinstance(response, dict):
+            raise gl.vm.UserError("[LLM_ERROR] Appeal response was not a JSON object.")
+        raw = str(response.get("decision", "")).strip().lower()
+        if raw not in ["upheld", "overturned"]:
+            if raw in ["uphold", "stand", "valid", "deny", "denied", "reject", "rejected"]:
+                raw = "upheld"
+            elif raw in ["overturn", "void", "refund", "grant", "granted", "accept", "accepted"]:
+                raw = "overturned"
+            else:
+                raise gl.vm.UserError(f"[LLM_ERROR] Unrecognized appeal decision: {raw}")
+        reasoning = str(response.get("reasoning", "")).strip()
+        if not reasoning:
+            reasoning = "No reasoning provided."
+        return {"decision": raw, "reasoning": reasoning}
 
     def _emit_profile_result(self, room_id: str, winner: Address, loser: Address):
         if self.core_contract == ZERO_ADDRESS:
