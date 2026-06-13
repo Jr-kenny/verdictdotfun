@@ -5,6 +5,12 @@ networks:
     url: "http://127.0.0.1:4000/api"
     leader_only: false
 
+  # Hosted Studio (gasless). Used for the live vision round-trip test; select with
+  # `--network studionet`. The deployer key is read from .env.
+  studionet:
+    accounts:
+      - "${GENLAYER_DEPLOYER_PRIVATE_KEY}"
+
 paths:
   contracts: "contracts"
   artifacts: "artifacts"

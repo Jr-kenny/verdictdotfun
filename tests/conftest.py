@@ -4,6 +4,12 @@ import tempfile
 from gltest.direct import loader
 
 
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "slow: live/network tests (real LLM + IPFS), excluded from the default run"
+    )
+
+
 def _inject_message_to_fd0_windows(vm):
     try:
         from genlayer.py import calldata
