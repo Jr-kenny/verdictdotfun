@@ -152,6 +152,17 @@ class VerdictStone(gl.Contract):
         return int(self.effective_level_of_profile.get(key, u16(0)))
 
     @gl.public.view
+    def get_config(self) -> dict:
+        return {
+            "owner": str(self.owner),
+            "operator": str(self.operator),
+            "bridge_sender": str(self.bridge_sender),
+            "bridge_receiver": str(self.bridge_receiver),
+            "hub_contract": self.hub_contract,
+            "hub_eid": int(self.hub_eid),
+        }
+
+    @gl.public.view
     def decode_outbound(self, message: bytes) -> dict:
         kind, token_id, profile, owner, level = gl.evm.decode(_OUT_T, message)
         return {
@@ -172,6 +183,18 @@ class VerdictStone(gl.Contract):
             "profile": str(self._bytes32_to_address(profile)),
             "level": int(level),
         }
+
+    @gl.public.write
+    def set_config(self, bridge_sender: str, bridge_receiver: str, hub_contract: str, hub_eid: int):
+        """Owner-only: repoint the bridge wiring after deploy. GL redeploys lose state, so the
+        endpoints must be reconfigurable in place (mirrors ClaimVerifier.set_config); also lets the
+        hub address be set after the hub deploy without a circular dependency."""
+        if gl.message.sender_address != self.owner:
+            raise gl.vm.UserError("[EXPECTED] Only owner")
+        self.bridge_sender = self._normalize_address(bridge_sender)
+        self.bridge_receiver = self._normalize_address(bridge_receiver)
+        self.hub_contract = str(hub_contract).lower()
+        self.hub_eid = u256(int(hub_eid))
 
     # ---- outbound (GL -> hub) ----
 

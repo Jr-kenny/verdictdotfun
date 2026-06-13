@@ -110,6 +110,43 @@ def test_sync_level_requires_operator(direct_vm, direct_deploy, direct_alice, di
         c.sync_level(direct_bob, 5, direct_bob)
 
 
+# ---- config (owner reconfiguration of bridge wiring) ----
+
+def test_set_config_updates_wiring(direct_vm, direct_deploy, direct_alice):
+    direct_vm.sender = direct_alice
+    c = _deploy(direct_deploy, direct_alice)
+    new_bs = "0x" + "ab" * 20
+    new_br = "0x" + "cd" * 20
+    new_hub = "0x" + "ef" * 20
+    c.set_config(new_bs, new_br, new_hub, 40245)
+    cfg = c.get_config()
+    assert cfg["bridge_sender"].lower() == new_bs
+    assert cfg["bridge_receiver"].lower() == new_br
+    assert cfg["hub_contract"].lower() == new_hub
+    assert cfg["hub_eid"] == 40245
+
+
+def test_set_config_owner_only(direct_vm, direct_deploy, direct_alice, direct_bob):
+    direct_vm.sender = direct_alice
+    c = _deploy(direct_deploy, direct_alice)
+    direct_vm.sender = direct_bob
+    with direct_vm.expect_revert("owner"):
+        c.set_config("0x" + "ab" * 20, "0x" + "cd" * 20, "0x" + "ef" * 20, 1)
+
+
+def test_set_config_rewires_inbound_gate(direct_vm, direct_deploy, direct_alice, direct_bob):
+    # After repointing hub_contract, a message from the new hub is accepted and the old one ignored.
+    direct_vm.sender = direct_alice
+    c = _deploy(direct_deploy, direct_alice)
+    new_hub = "0x" + "ef" * 20
+    c.set_config(ZERO, BR, new_hub, HUB_EID)
+    direct_vm.sender = BR_SENDER
+    c.process_bridge_message("0x1", HUB_EID, HUB, _in_effective_level(_addr(direct_bob), 7))  # old hub
+    assert c.get_effective_level(direct_bob) == 0  # ignored
+    c.process_bridge_message("0x1", HUB_EID, new_hub, _in_effective_level(_addr(direct_bob), 7))  # new hub
+    assert c.get_effective_level(direct_bob) == 7
+
+
 # ---- mint (outbound) ----
 
 def test_request_mint_below_gate_reverts(direct_vm, direct_deploy, direct_alice, direct_bob):
