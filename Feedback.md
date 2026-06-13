@@ -83,3 +83,42 @@ then a one hour appeal window, then finalize) where the appeal is judged by the 
 appeal-judging contract is a nice stress test of the consensus-on-subjective-output path if you
 ever want a repro. thanks for building something that makes "the contract is the brain" actually
 work.
+
+## update, image evidence in appeals (2026-06-13)
+
+came back and added image evidence to the appeal flow, so the loser can attach a screenshot (an
+ipfs cid) and the contract fetches it and hands it to the model as part of judging. the feature
+works, but the vision path had a few sharp edges worth writing down.
+
+the first is a real api wart. `exec_prompt` has typing overloads for text and for json, and the
+json overload takes a singular `image=` while the actual implementation only ever reads a plural
+`images=` off the config. so the exact call you want for a judged verdict about a picture,
+`exec_prompt(prompt, response_format="json", images=[...])`, runs fine but matches none of the
+declared overloads, a type checker flags it. either line the overloads up with the impl or just
+expose one signature that takes `response_format` and `images` together, because "json answer
+about an image" is the obvious case for an llm-as-judge contract and right now it's the one
+combination the types don't bless.
+
+second, you can't really test the vision path in direct mode. `direct_vm.mock_llm` matches on the
+prompt string and ignores the images you pass, so a direct test proves the wiring (fetch the bytes,
+attach them, get a decision back) but never proves the model actually saw the image. that's fine
+once you know it, but we only worked it out by reading the mock internals. a line in the docs
+saying direct mode stubs the prompt text only, and anything image-dependent has to move to an
+integration test, would save people the surprise.
+
+third, `web.render(mode="screenshot")` returns empty bytes in direct mode, `{"ok": {"image":
+b""}}`, so the screenshot-evidence path can't be exercised there at all. we sidestepped it by
+pulling the image over `gl.nondet.web.get` instead, which does hand back the real body bytes in
+direct mode, but if render is the intended way to get a screenshot into a prompt then the direct
+harness returning an empty image makes it untestable without a live run.
+
+and a small one that actually nudged a design choice: the flat web mock format (`{"status": 200,
+"body": ...}`) always comes back with empty headers, so you can't assert on content-type in a
+direct test without switching to the full `{"response": {...}}` shape. we ended up validating
+evidence by sniffing magic bytes instead of trusting a content-type header, which is the more
+robust call for consensus anyway since every validator sees the same bytes, but it was the mock
+limitation that pushed us there rather than a deliberate decision up front.
+
+none of this is a blocker, and the content-addressed angle fits genlayer really well, a cid means
+every validator fetches identical bytes so the image is consensus-safe by construction. it's just
+that the dev loop around vision is a step behind the dev loop around text right now.

@@ -260,3 +260,94 @@ def test_riddle_finalize_after_window_resolves(direct_vm, direct_deploy, direct_
     contract = _riddle_forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "RFI02", window=0)
     contract.finalize_room("RFI02")
     assert contract.get_room("RFI02").status == "resolved"
+
+
+# ---- image evidence for appeals (handoff #1) ----
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 96
+GATEWAY = r"ipfs\.io/ipfs/"
+CID = "bafybeigdyrztexamplecidexamplecidexamplecid000"
+
+
+def test_riddle_file_appeal_stores_evidence_cid(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _riddle_forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "REVID1")
+    direct_vm.sender = direct_bob
+    contract.file_appeal("REVID1", "My screen froze; screenshot attached as proof.", CID)
+    room = contract.get_room("REVID1")
+    assert room.appeal_state == "filed"
+    assert room.evidence_uri == CID
+
+
+def test_riddle_file_appeal_strips_ipfs_scheme(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _riddle_forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "REVID2")
+    direct_vm.sender = direct_bob
+    contract.file_appeal("REVID2", "Proof of the disconnect is attached.", "ipfs://" + CID)
+    assert contract.get_room("REVID2").evidence_uri == CID
+
+
+def test_riddle_file_appeal_rejects_url_evidence(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _riddle_forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "REVID3")
+    direct_vm.sender = direct_bob
+    with direct_vm.expect_revert("bare IPFS CID"):
+        contract.file_appeal("REVID3", "Here is my evidence link.", "https://evil.example.com/x.png")
+
+
+def test_riddle_text_only_appeal_leaves_evidence_empty(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _riddle_forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "REVID4")
+    direct_vm.sender = direct_bob
+    contract.file_appeal("REVID4", "Plain text appeal with no screenshot.")
+    assert contract.get_room("REVID4").evidence_uri == ""
+
+
+def test_riddle_appeal_with_image_evidence_overturned(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _riddle_forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "RVIS1")
+    direct_vm.sender = direct_bob
+    contract.file_appeal("RVIS1", "Screenshot shows the disconnect error dialog.", CID)
+    direct_vm.mock_web(GATEWAY, {"status": 200, "body": PNG_BYTES})
+    direct_vm.mock_llm(r"(?s).*APPEAL REVIEW.*",
+                       {"decision": "overturned", "reasoning": "Screenshot confirms a genuine disconnect."})
+    contract.judge_appeal("RVIS1")
+    room = contract.get_room("RVIS1")
+    assert room.appeal_result == "overturned"
+    assert room.status == "void"
+
+
+def test_riddle_appeal_prompt_notes_attached_evidence(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _riddle_forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "RVIS2")
+    direct_vm.sender = direct_bob
+    contract.file_appeal("RVIS2", "See the attached screenshot of the crash.", CID)
+    direct_vm.mock_web(GATEWAY, {"status": 200, "body": PNG_BYTES})
+    direct_vm.mock_llm(r"(?s).*APPEAL REVIEW.*attached an image.*",
+                       {"decision": "upheld", "reasoning": "Image does not support the claim."})
+    contract.judge_appeal("RVIS2")
+    assert contract.get_room("RVIS2").appeal_result == "upheld"
+
+
+def test_riddle_appeal_non_image_evidence_dismisses_appeal(direct_vm, direct_deploy, direct_alice, direct_bob):
+    # Junk evidence dismisses the appeal instead of deadlocking the room.
+    contract = _riddle_forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "RVIS3")
+    direct_vm.sender = direct_bob
+    contract.file_appeal("RVIS3", "Attached file is my evidence of the fault.", CID)
+    direct_vm.mock_web(GATEWAY, {"status": 200, "body": b"this is plain text, not an image"})
+    contract.judge_appeal("RVIS3")
+    room = contract.get_room("RVIS3")
+    assert room.appeal_result == "upheld"
+    assert room.status == "resolved"
+
+
+def test_riddle_appeal_oversize_evidence_dismisses_appeal(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _riddle_forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "RVIS4")
+    direct_vm.sender = direct_bob
+    contract.file_appeal("RVIS4", "Large screenshot attached as evidence here.", CID)
+    oversize = b"\x89PNG\r\n\x1a\n" + b"\x00" * (5 * 1024 * 1024 + 1)
+    direct_vm.mock_web(GATEWAY, {"status": 200, "body": oversize})
+    contract.judge_appeal("RVIS4")
+    assert contract.get_room("RVIS4").appeal_result == "upheld"
+
+
+def test_riddle_appeal_gateway_5xx_is_transient(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _riddle_forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "RVIS5")
+    direct_vm.sender = direct_bob
+    contract.file_appeal("RVIS5", "Screenshot evidence attached for review.", CID)
+    direct_vm.mock_web(GATEWAY, {"status": 503, "body": b"gateway down"})
+    with direct_vm.expect_revert("TRANSIENT"):
+        contract.judge_appeal("RVIS5")

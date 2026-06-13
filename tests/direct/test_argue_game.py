@@ -307,3 +307,96 @@ def test_appeal_rejected_after_window_closed(direct_vm, direct_deploy, direct_al
     direct_vm.sender = direct_bob
     with direct_vm.expect_revert("challenge window has closed"):
         contract.file_appeal("FIN04", "Too late to appeal once the window has shut.")
+
+
+# ---- image evidence for appeals (handoff #1) ----
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 96  # PNG magic + filler
+GATEWAY = r"ipfs\.io/ipfs/"
+CID = "bafybeigdyrztexamplecidexamplecidexamplecid000"
+
+
+def test_file_appeal_stores_evidence_cid(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "EVID1")
+    direct_vm.sender = direct_bob
+    contract.file_appeal("EVID1", "My screen froze; screenshot attached as proof.", CID)
+    room = contract.get_room("EVID1")
+    assert room.appeal_state == "filed"
+    assert room.evidence_uri == CID
+
+
+def test_file_appeal_strips_ipfs_scheme(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "EVID2")
+    direct_vm.sender = direct_bob
+    contract.file_appeal("EVID2", "Proof of the disconnect is attached.", "ipfs://" + CID)
+    assert contract.get_room("EVID2").evidence_uri == CID
+
+
+def test_file_appeal_rejects_url_evidence(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "EVID3")
+    direct_vm.sender = direct_bob
+    with direct_vm.expect_revert("bare IPFS CID"):
+        contract.file_appeal("EVID3", "Here is my evidence link.", "https://evil.example.com/x.png")
+
+
+def test_text_only_appeal_leaves_evidence_empty(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "EVID4")
+    direct_vm.sender = direct_bob
+    contract.file_appeal("EVID4", "Plain text appeal with no screenshot.")
+    assert contract.get_room("EVID4").evidence_uri == ""
+
+
+def test_appeal_with_image_evidence_overturned(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "VIS1")
+    direct_vm.sender = direct_bob
+    contract.file_appeal("VIS1", "Screenshot shows the disconnect error dialog.", CID)
+    direct_vm.mock_web(GATEWAY, {"status": 200, "body": PNG_BYTES})
+    direct_vm.mock_llm(r"(?s).*APPEAL REVIEW.*",
+                       {"decision": "overturned", "reasoning": "Screenshot confirms a genuine disconnect."})
+    contract.judge_appeal("VIS1")
+    room = contract.get_room("VIS1")
+    assert room.appeal_result == "overturned"
+    assert room.status == "void"
+
+
+def test_appeal_prompt_notes_attached_evidence(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "VIS2")
+    direct_vm.sender = direct_bob
+    contract.file_appeal("VIS2", "See the attached screenshot of the crash.", CID)
+    direct_vm.mock_web(GATEWAY, {"status": 200, "body": PNG_BYTES})
+    # The prompt must tell the judge an image is attached so it weighs the evidence.
+    direct_vm.mock_llm(r"(?s).*APPEAL REVIEW.*attached an image.*",
+                       {"decision": "upheld", "reasoning": "Image does not support the claim."})
+    contract.judge_appeal("VIS2")
+    assert contract.get_room("VIS2").appeal_result == "upheld"
+
+
+def test_appeal_non_image_evidence_dismisses_appeal(direct_vm, direct_deploy, direct_alice, direct_bob):
+    # Junk evidence must not deadlock the room: the appeal is dismissed (provisional
+    # result stands) rather than reverting forever and blocking finalize.
+    contract = _forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "VIS3")
+    direct_vm.sender = direct_bob
+    contract.file_appeal("VIS3", "Attached file is my evidence of the fault.", CID)
+    direct_vm.mock_web(GATEWAY, {"status": 200, "body": b"this is plain text, not an image"})
+    contract.judge_appeal("VIS3")  # no LLM mock needed: dismissed before the prompt runs
+    room = contract.get_room("VIS3")
+    assert room.appeal_result == "upheld"
+    assert room.status == "resolved"
+
+
+def test_appeal_oversize_evidence_dismisses_appeal(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "VIS4")
+    direct_vm.sender = direct_bob
+    contract.file_appeal("VIS4", "Large screenshot attached as evidence here.", CID)
+    oversize = b"\x89PNG\r\n\x1a\n" + b"\x00" * (5 * 1024 * 1024 + 1)
+    direct_vm.mock_web(GATEWAY, {"status": 200, "body": oversize})
+    contract.judge_appeal("VIS4")
+    assert contract.get_room("VIS4").appeal_result == "upheld"
+
+
+def test_appeal_gateway_5xx_is_transient(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _forfeit_provisional(direct_vm, direct_deploy, direct_alice, direct_bob, "VIS5")
+    direct_vm.sender = direct_bob
+    contract.file_appeal("VIS5", "Screenshot evidence attached for review.", CID)
+    direct_vm.mock_web(GATEWAY, {"status": 503, "body": b"gateway down"})
+    with direct_vm.expect_revert("TRANSIENT"):
+        contract.judge_appeal("VIS5")

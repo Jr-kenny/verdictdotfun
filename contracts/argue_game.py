@@ -13,6 +13,30 @@ ZERO_ADDRESS = Address("0x0000000000000000000000000000000000000000")
 MODE = "argue"
 CHALLENGE_WINDOW_SECONDS = 3600
 
+# Appeal image evidence: stored as a bare IPFS CID (content-addressed so every
+# validator fetches identical bytes -> consensus-safe), fetched through a public
+# gateway at judge time and passed to the vision model.
+EVIDENCE_GATEWAY = "https://ipfs.io/ipfs/"
+MAX_CID_LEN = 100
+MIN_CID_LEN = 16
+MAX_EVIDENCE_BYTES = 5 * 1024 * 1024  # 5 MiB
+
+# Magic-byte signatures for the image formats the judge accepts. Sniffing bytes
+# is deterministic and gateway-agnostic (more robust than trusting a header).
+_IMAGE_MAGICS = (
+    b"\x89PNG\r\n\x1a\n",  # PNG
+    b"\xff\xd8\xff",       # JPEG
+    b"GIF87a",             # GIF
+    b"GIF89a",             # GIF
+)
+
+
+def _is_supported_image(data: bytes) -> bool:
+    if any(data.startswith(magic) for magic in _IMAGE_MAGICS):
+        return True
+    # WebP: "RIFF" .... "WEBP"
+    return len(data) >= 12 and data[0:4] == b"RIFF" and data[8:12] == b"WEBP"
+
 
 @gl.contract_interface
 class VerdictDotFunCore:
@@ -65,6 +89,7 @@ class ArgueRoom:
     appeal_state: str
     appeal_reason: str
     appeal_result: str
+    evidence_uri: str
 
 
 class ArgueGame(gl.Contract):
@@ -148,6 +173,7 @@ class ArgueGame(gl.Contract):
             appeal_state="none",
             appeal_reason="",
             appeal_result="",
+            evidence_uri="",
         )
         self.room_ids.append(normalized_id)
 
@@ -278,7 +304,7 @@ class ArgueGame(gl.Contract):
         self._enter_provisional(room, winner)
 
     @gl.public.write
-    def file_appeal(self, room_id: str, reason: str):
+    def file_appeal(self, room_id: str, reason: str, evidence_uri: str = ""):
         room = self._require_room(room_id)
         if room.status != "provisional":
             raise gl.vm.UserError("[EXPECTED] Only provisional rooms can be appealed.")
@@ -303,7 +329,35 @@ class ArgueGame(gl.Contract):
 
         room.appeal_state = "filed"
         room.appeal_reason = cleaned
+        room.evidence_uri = self._normalize_evidence_cid(evidence_uri)
         self.rooms[room.id] = room
+
+    def _normalize_evidence_cid(self, evidence_uri: str) -> str:
+        cid = evidence_uri.strip()
+        if not cid:
+            return ""
+        if cid.startswith("ipfs://"):
+            cid = cid[len("ipfs://"):]
+        if len(cid) < MIN_CID_LEN or len(cid) > MAX_CID_LEN:
+            raise gl.vm.UserError("[EXPECTED] Evidence CID length is out of range.")
+        if not cid.isalnum():
+            raise gl.vm.UserError("[EXPECTED] Evidence must be a bare IPFS CID (alphanumeric, no URL).")
+        return cid
+
+    def _fetch_evidence_image(self, cid: str) -> bytes:
+        res = gl.nondet.web.get(EVIDENCE_GATEWAY + cid, headers={"Accept": "image/*"})
+        if res.status >= 500:
+            raise gl.vm.UserError("[TRANSIENT] Evidence gateway is unavailable.")
+        if res.status >= 400:
+            raise gl.vm.UserError(f"[EXTERNAL] Evidence could not be fetched (status {res.status}).")
+        body = res.body or b""
+        if len(body) == 0:
+            raise gl.vm.UserError("[EXPECTED] Evidence image was empty.")
+        if len(body) > MAX_EVIDENCE_BYTES:
+            raise gl.vm.UserError("[EXPECTED] Evidence image exceeds the size limit.")
+        if not _is_supported_image(body):
+            raise gl.vm.UserError("[EXPECTED] Evidence is not a supported image format.")
+        return body
 
     @gl.public.write
     def judge_appeal(self, room_id: str):
@@ -314,18 +368,31 @@ class ArgueGame(gl.Contract):
             raise gl.vm.UserError("[EXPECTED] No appeal is pending for this room.")
 
         prompt = self._build_appeal_prompt(room)
+        cid = room.evidence_uri
 
         def leader_fn():
-            response = gl.nondet.exec_prompt(prompt, response_format="json")
+            images = None
+            if cid:
+                try:
+                    images = [self._fetch_evidence_image(cid)]
+                except gl.vm.UserError as e:
+                    msg = e.message if hasattr(e, "message") else str(e)
+                    if msg.startswith("[TRANSIENT]"):
+                        raise  # retryable: revert so the appeal can be judged later
+                    # Deterministic bad evidence dismisses the appeal rather than
+                    # deadlocking the room (finalize is blocked while it is pending).
+                    return {"decision": "upheld",
+                            "reasoning": "Appeal evidence was not a fetchable image, so the provisional result stands."}
+            response = gl.nondet.exec_prompt(prompt, response_format="json", images=images)
             return self._normalize_appeal(response)
 
         def validator_fn(leaders_res: gl.vm.Result) -> bool:
             if not isinstance(leaders_res, gl.vm.Return):
-                return False
+                return self._appeal_errors_agree(leaders_res, leader_fn)
             try:
                 validator = leader_fn()
             except Exception:
-                return False
+                return False  # leader succeeded, validator failed -> disagree
             return validator["decision"] == leaders_res.calldata["decision"]
 
         decision = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
@@ -402,6 +469,7 @@ class ArgueGame(gl.Contract):
                 appeal_state="none",
                 appeal_reason="",
                 appeal_result="",
+                evidence_uri="",
             ),
         )
 
@@ -627,6 +695,13 @@ Rules:
             CreditLedgerIface(self.credit_ledger).emit(on="accepted").finalize_void(room.id)
 
     def _build_appeal_prompt(self, room: ArgueRoom) -> str:
+        evidence_note = (
+            "The losing player attached an image as evidence; it is provided alongside this "
+            "prompt. Judge whether the attached image actually supports the stated reason — "
+            "ignore the claim if the image does not corroborate it.\n"
+            if room.evidence_uri
+            else "No image evidence was attached; judge on the written reason alone.\n"
+        )
         return f"""APPEAL REVIEW — you are the impartial judge for a wager match.
 
 A provisional result was reached. The losing player has appealed. Decide whether the
@@ -636,12 +711,31 @@ Overturn ONLY when the appeal shows the result was unfair due to a genuine techn
 fault (e.g., a verified disconnect that prevented play), NOT mere disagreement with the
 verdict or a desire to replay.
 
-Match prompt: {room.prompt}
+{evidence_note}Match prompt: {room.prompt}
 Provisional verdict reasoning: {room.verdict_reasoning}
 Owner score: {int(room.owner_score)}  Opponent score: {int(room.opponent_score)}
 Appeal reason from the losing player: {room.appeal_reason}
 
 Return JSON: {{"decision": "upheld" | "overturned", "reasoning": "<one or two sentences>"}}"""
+
+    def _appeal_errors_agree(self, leaders_res: gl.vm.Result, leader_fn: typing.Callable) -> bool:
+        # Validator path for when the leader returned an error rather than a decision.
+        # Deterministic faults ([EXPECTED]/[EXTERNAL]) must match exactly; a transient
+        # gateway failure ([TRANSIENT]) agrees if the validator hit one too; anything
+        # else (LLM misbehavior) disagrees to force rotation.
+        leader_msg = leaders_res.message if hasattr(leaders_res, "message") else ""
+        try:
+            leader_fn()
+            return False  # leader errored, validator succeeded -> disagree
+        except gl.vm.UserError as e:
+            validator_msg = e.message if hasattr(e, "message") else str(e)
+            if validator_msg.startswith("[EXPECTED]") or validator_msg.startswith("[EXTERNAL]"):
+                return validator_msg == leader_msg
+            if validator_msg.startswith("[TRANSIENT]") and leader_msg.startswith("[TRANSIENT]"):
+                return True
+            return False
+        except Exception:
+            return False
 
     def _normalize_appeal(self, response: typing.Any) -> typing.Dict[str, str]:
         if not isinstance(response, dict):
