@@ -3,6 +3,23 @@ const { ethers } = require("hardhat");
 
 const PROFILE = ethers.zeroPadValue("0xabc1230000000000000000000000000000000001", 32);
 const HUB_CHAIN = 300; // zksync era eid placeholder for phase 1b
+const GL_EID = 61999; // GenLayer studionet source chain id (envelope srcChainId)
+
+const coder = ethers.AbiCoder.defaultAbiCoder();
+
+// Outbound wire format from VerdictStone (GL): byte-matches gl.evm.encode / Solidity abi.encode.
+function outMint(tokenId, profile, owner, level) {
+  return coder.encode(
+    ["uint8", "uint256", "bytes32", "address", "uint256"],
+    [0, tokenId, profile, owner, level],
+  );
+}
+function outRaise(tokenId, level) {
+  return coder.encode(
+    ["uint8", "uint256", "bytes32", "address", "uint256"],
+    [1, tokenId, ethers.ZeroHash, ethers.ZeroAddress, level],
+  );
+}
 
 async function deploy() {
   const [owner, operator, alice, bob] = await ethers.getSigners();
@@ -103,6 +120,68 @@ describe("VerdictStoneHub owner-change signalling", () => {
     await expect(hub.connect(alice).transferFrom(alice.address, bob.address, 1))
       .to.emit(hub, "StoneOwnerChanged").withArgs(1, bob.address);
     expect(await hub.ownerOf(1)).to.equal(bob.address);
+  });
+});
+
+describe("VerdictStoneHub processBridgeMessage (bridge dispatch)", () => {
+  // Here `mockReceiver` stands in for the deployed VerdictStoneBridgeReceiver, and `glSource`
+  // for the GenLayer VerdictStone IC address. The hub gates on both.
+  async function deployWired() {
+    const ctx = await deploy();
+    const [, , , , mockReceiver, glSource] = await ethers.getSigners();
+    await ctx.hub.connect(ctx.owner).setBridgeReceiver(mockReceiver.address);
+    await ctx.hub.connect(ctx.owner).setGenlayerSource(glSource.address);
+    return { ...ctx, mockReceiver, glSource };
+  }
+
+  it("owner sets bridgeReceiver and genlayerSource; non-owner cannot", async () => {
+    const { hub, owner, alice, mockReceiver, glSource } = await deployWired();
+    expect(await hub.bridgeReceiver()).to.equal(mockReceiver.address);
+    expect(await hub.genlayerSource()).to.equal(glSource.address);
+    await expect(hub.connect(alice).setBridgeReceiver(alice.address))
+      .to.be.revertedWithCustomError(hub, "OwnableUnauthorizedAccount");
+    await expect(hub.connect(alice).setGenlayerSource(alice.address))
+      .to.be.revertedWithCustomError(hub, "OwnableUnauthorizedAccount");
+  });
+
+  it("dispatches a mint message to applyMint", async () => {
+    const { hub, mockReceiver, glSource, alice } = await deployWired();
+    const msg = outMint(1, PROFILE, alice.address, 3);
+    await expect(hub.connect(mockReceiver).processBridgeMessage(GL_EID, glSource.address, msg))
+      .to.emit(hub, "StoneMinted").withArgs(1, PROFILE, alice.address, 3);
+    expect(await hub.ownerOf(1)).to.equal(alice.address);
+    expect(await hub.levelOf(1)).to.equal(3);
+  });
+
+  it("dispatches a raise message to raiseLevel", async () => {
+    const { hub, mockReceiver, glSource, alice } = await deployWired();
+    await hub.connect(mockReceiver).processBridgeMessage(GL_EID, glSource.address, outMint(1, PROFILE, alice.address, 3));
+    await expect(hub.connect(mockReceiver).processBridgeMessage(GL_EID, glSource.address, outRaise(1, 9)))
+      .to.emit(hub, "StoneLeveled").withArgs(1, 9);
+    expect(await hub.levelOf(1)).to.equal(9);
+  });
+
+  it("rejects a caller that is not the bridgeReceiver", async () => {
+    const { hub, alice, glSource } = await deployWired();
+    await expect(hub.connect(alice).processBridgeMessage(GL_EID, glSource.address, outMint(1, PROFILE, alice.address, 3)))
+      .to.be.revertedWithCustomError(hub, "NotBridgeReceiver");
+  });
+
+  it("ignores a message from an unexpected GenLayer source (no state change)", async () => {
+    const { hub, mockReceiver, alice, bob } = await deployWired();
+    await expect(hub.connect(mockReceiver).processBridgeMessage(GL_EID, bob.address, outMint(1, PROFILE, alice.address, 3)))
+      .to.emit(hub, "UnexpectedSource").withArgs(bob.address);
+    expect(await hub.balanceOf(alice.address)).to.equal(0);
+  });
+
+  it("ignores an unknown message kind without reverting", async () => {
+    const { hub, mockReceiver, glSource, alice } = await deployWired();
+    const unknown = coder.encode(
+      ["uint8", "uint256", "bytes32", "address", "uint256"],
+      [7, 1, PROFILE, alice.address, 3],
+    );
+    await hub.connect(mockReceiver).processBridgeMessage(GL_EID, glSource.address, unknown);
+    expect(await hub.balanceOf(alice.address)).to.equal(0);
   });
 });
 

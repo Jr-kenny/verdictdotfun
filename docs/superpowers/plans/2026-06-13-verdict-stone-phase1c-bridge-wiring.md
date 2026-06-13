@@ -52,19 +52,36 @@ it stays operator-gated.
 - **Verification:** 14 direct tests (payloads cross-checked against `eth_abi` to prove Solidity
   byte-equivalence), full direct suite **80 passed / 1 xfailed**, `genvm-lint check` + validation pass.
 
-## Remaining — EVM side + live (needs the user: keys, network, relay)
+## Done — EVM GL→hub dispatch, option (b) (this commit)
 
-1. **GL → hub dispatch.** `VerdictStoneHub` (1b) currently exposes typed `applyMint`/`raiseLevel` for a
-   direct-operator relay. Two options to bridge the new tagged-tuple payload:
-   - **(a)** the relay decodes `_OUT_T` and calls `applyMint`/`raiseLevel` as operator (hub unchanged), or
-   - **(b)** a **`VerdictStoneReceiver.sol`** dispatch-on-receive (Tokenpost's `VerdictReceiver` model;
-     boilerplate's storing receiver is a dead end per GENLAYER-FEEDBACK #7) that decodes `_OUT_T` and
-     dispatches. **(b)** is the proven path.
-2. **hub → GL inbound.** Hub emits `owner_changed` (from its existing `StoneOwnerChanged`) and
+Chose **(b)**, reusing Tokenpost's target-agnostic `VerdictReceiver` verbatim:
+
+- `contracts/evm/VerdictStoneBridgeReceiver.sol` — ported as-is (dispatch-on-receive: `authorizedRelayers`
+  + dedup + `deliverDirect`, plus the LZ `lzReceive` path), decodes the envelope
+  `(uint32 srcChainId, address srcSender, address target, bytes message)` and calls
+  `IGenLayerBridgeReceiver(target).processBridgeMessage(...)`.
+- `contracts/evm/interfaces/IGenLayerBridgeReceiver.sol` — the callback interface.
+- `VerdictStoneHub` now `is IGenLayerBridgeReceiver`: added `bridgeReceiver` + `genlayerSource` (owner
+  setters), refactored `applyMint`/`raiseLevel` into internal helpers with the operator wrappers kept as
+  an admin/escape-hatch path, and added `processBridgeMessage` (gated to the receiver + expected GL
+  source; decodes the wire format and dispatches; unexpected sources and unknown kinds are ignored,
+  never revert). The relay stays dumb (forwards opaque bytes), so the wire format is enforced on-chain at
+  both ends.
+- **Verification:** full Hardhat suite **35 passing** (7 new hub bridge-dispatch tests + 4 receiver
+  tests). The hub decode (`abi.decode`) and the GL encode (`gl.evm.encode`, cross-checked vs `eth_abi`)
+  reference the identical `(uint8,uint256,bytes32,address,uint256)` layout, profile left-padded both ends.
+
+## Remaining — hub→GL inbound + live (needs the user: keys, network, relay)
+
+1. **hub → GL inbound.** Hub emits `owner_changed` (from its existing `StoneOwnerChanged`) and
    `effective_level` (from `effectiveLevelOf`) via the EVM BridgeForwarder; relay delivers to the GL
    BridgeReceiver → `process_bridge_message`. Prefer **authorized-relayer `deliverDirect`**
    (transport-agnostic) since the LZ testnet reverse leg stalls (GENLAYER-FEEDBACK #8).
-3. **Deploy + smoke.** Deploy the boilerplate (BridgeForwarder/Receiver on the ZKsync Era Sepolia hub +
-   BridgeSender/Receiver ICs on GenLayer), deploy `VerdictStoneHub` to the hub, set its `operator` to the
-   deployed receiver, run the relay, prove mint → applyMint and a transfer → owner_changed → rebind
-   end-to-end. Hub spans **ZKsync Era Sepolia + Base Sepolia** (decided 2026-06-13).
+2. **Deploy + smoke.** Deploy the boilerplate (BridgeForwarder/Receiver on the ZKsync Era Sepolia hub +
+   BridgeSender/Receiver ICs on GenLayer), deploy `VerdictStoneHub` + `VerdictStoneBridgeReceiver` to the
+   hub, wire `hub.setBridgeReceiver` / `hub.setGenlayerSource` / `receiver.setAuthorizedRelayer`, and on
+   GenLayer set VerdictStone's `bridge_sender` / `bridge_receiver` / `hub_contract` / `hub_eid`, run the
+   relay, prove mint → applyMint and a transfer → owner_changed → rebind end-to-end. Hub spans **ZKsync Era
+   Sepolia + Base Sepolia** (decided 2026-06-13). NOTE: ZKsync Era needs the `@matterlabs/hardhat-zksync`
+   (zksolc) toolchain + a network entry — hardhat.config currently has only Base Sepolia, which is
+   deployable today with the existing config/key.
