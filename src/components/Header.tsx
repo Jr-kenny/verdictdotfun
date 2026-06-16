@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Gavel, Trophy } from "lucide-react";
+import { ChevronDown, Gavel, Gem, Trophy } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -53,7 +53,9 @@ const Header = ({ centered = false }: { centered?: boolean }) => {
   const localProfileName = localProfileQuery.data;
   const verdictBadge = verdictBadgeQuery.data;
   const displayName = profile?.name ?? (!coreContractConfigured ? localProfileName : null) ?? "Profile";
-  const showLeaderboardLink = location.pathname === "/lobby";
+  const showNavLinks = ["/lobby", "/leaderboard", "/market"].includes(location.pathname);
+  const navLinkClass =
+    "hidden items-center gap-2 rounded-full border border-border/70 bg-card/70 px-4 py-2 text-sm font-heading font-semibold tracking-[0.18em] text-muted-foreground transition hover:border-primary/50 hover:text-foreground md:flex";
 
   const renameMutation = useMutation({
     mutationFn: async () => {
@@ -109,11 +111,14 @@ const Header = ({ centered = false }: { centered?: boolean }) => {
         <span className="font-heading text-lg font-bold tracking-widest">VERDICT.FUN</span>
       </Link>
       <div className="ml-auto flex items-center gap-3">
-        {showLeaderboardLink && (
-          <Link
-            to="/leaderboard"
-            className="hidden items-center gap-2 rounded-full border border-border/70 bg-card/70 px-4 py-2 text-sm font-heading font-semibold tracking-[0.18em] text-muted-foreground transition hover:border-primary/50 hover:text-foreground md:flex"
-          >
+        {showNavLinks && location.pathname !== "/market" && (
+          <Link to="/market" className={navLinkClass}>
+            <Gem className="h-4 w-4 text-primary" />
+            Stone Market
+          </Link>
+        )}
+        {showNavLinks && location.pathname !== "/leaderboard" && (
+          <Link to="/leaderboard" className={navLinkClass}>
             <Trophy className="h-4 w-4 text-primary" />
             Leaderboard
           </Link>

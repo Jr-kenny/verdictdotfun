@@ -12,6 +12,7 @@ import Lobby from "@/pages/Lobby";
 import MintProfile from "@/pages/MintProfile";
 import NotFound from "@/pages/NotFound";
 import RoomLobby from "@/pages/RoomLobby";
+import StoneMarket from "@/pages/StoneMarket";
 
 const queryClient = new QueryClient();
 
@@ -28,6 +29,7 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Landing />} />
               <Route path="/leaderboard" element={<Leaderboard />} />
+              <Route path="/market" element={<StoneMarket />} />
               <Route path="/mint" element={<MintProfile />} />
               <Route path="/lobby" element={<Lobby />} />
               <Route path="/room/:mode/:roomId/material" element={<LegacyRoomRedirect />} />
