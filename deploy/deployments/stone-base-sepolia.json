@@ -1,0 +1,38 @@
+{
+  "network": "base-sepolia",
+  "chainId": 84532,
+  "deployedAt": "2026-06-13",
+  "deployer": "0xa64f1832D8Dd4F8c6Ad434D3942a09fEFc9ad2b3",
+  "explorer": "https://sepolia.basescan.org",
+  "note": "Phase 1c stone hub stack, deployed to Base Sepolia as the proving deployment for the GL→hub deliverDirect path (chain-agnostic, same path the live Tokenpost verdict loop uses). ZKsync Era Sepolia remains the spec's canonical hub, pending the zksolc toolchain.",
+  "contracts": {
+    "VerdictStoneBridgeReceiver": {
+      "address": "0x4Caad3aA8Fe34616479fFB9E8810367eED64c55c",
+      "constructorArgs": {
+        "endpoint": "0x0000000000000000000000000000000000000000",
+        "owner": "0xa64f1832D8Dd4F8c6Ad434D3942a09fEFc9ad2b3"
+      },
+      "note": "Dispatch-on-receive (direct-path only; endpoint zero). Decodes the envelope and calls hub.processBridgeMessage.",
+      "authorizedRelayer": "0xa64f1832D8Dd4F8c6Ad434D3942a09fEFc9ad2b3"
+    },
+    "VerdictStoneHub": {
+      "address": "0x6D612207Eea47Ccbd2Bab0D99bAaa54fFb189609",
+      "constructorArgs": {
+        "name": "Verdict Stone",
+        "symbol": "STONE",
+        "operator": "0xa64f1832D8Dd4F8c6Ad434D3942a09fEFc9ad2b3",
+        "hubChainId": 84532
+      },
+      "wired": {
+        "bridgeReceiver": "0x4Caad3aA8Fe34616479fFB9E8810367eED64c55c",
+        "genlayerSource": "0x0F603A6BBf535F173804491141fd2b67e8C2C94E"
+      }
+    }
+  },
+  "pending": {
+    "genlayerSource": "set hub.setGenlayerSource(<VerdictStone IC>) after the GenLayer deploy",
+    "authorizedRelayer": "set receiver.setAuthorizedRelayer(<relay wallet>, true) — the Tokenpost relay wallet",
+    "relayBranch": "add a stone-target branch to supabase/functions/relay/index.ts that deliverDirects to this receiver",
+    "bridgeReuse": "reuses Tokenpost's deployed GenLayer BridgeSender/BridgeReceiver ICs + relayer (safe: relay skips non-claim targets)"
+  }
+}

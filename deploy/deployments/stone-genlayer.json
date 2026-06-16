@@ -1,0 +1,14 @@
+{
+  "network": "studionet",
+  "deployedAt": "2026-06-16",
+  "deployer": "0xa64f1832D8Dd4F8c6Ad434D3942a09fEFc9ad2b3",
+  "contract": "VerdictStone",
+  "address": "0x0F603A6BBf535F173804491141fd2b67e8C2C94E",
+  "config": {
+    "bridge_sender": "0xcfBD25E80e075e7F34E79C7DaCbA2EAbD6Aca22f",
+    "bridge_receiver": "0xce87655D60dCa6CA76183DEDc8582766e5DE4e57",
+    "hub_contract": "0x6d612207eea47ccbd2bab0d99baaa54ffb189609",
+    "hub_eid": 40245
+  },
+  "note": "Reuses Tokenpost's deployed GL BridgeSender/BridgeReceiver ICs. operator defaulted to the deployer."
+}

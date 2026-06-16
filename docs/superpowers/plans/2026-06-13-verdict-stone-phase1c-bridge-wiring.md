@@ -1,6 +1,7 @@
 # Verdict Stone — Phase 1c: bridge wiring (GenLayer ↔ ZKsync Era hub)
 
-**Status:** GenLayer side **done** (this commit). EVM dispatch + live relay smoke **pending** (needs user/keys).
+**Status:** **COMPLETE — full loop proven live (2026-06-16).** GenLayer side, EVM dispatch, the
+standalone stone relay, and both smoke directions are all done and verified on testnet.
 
 Phase 1a built the GenLayer eligibility contract with a self-polled **outbox**; Phase 1b built the EVM
 hub registry (`VerdictStoneHub`). Reading the GenLayer bridge boilerplate's own example contracts — and,
@@ -77,11 +78,48 @@ Chose **(b)**, reusing Tokenpost's target-agnostic `VerdictReceiver` verbatim:
    `effective_level` (from `effectiveLevelOf`) via the EVM BridgeForwarder; relay delivers to the GL
    BridgeReceiver → `process_bridge_message`. Prefer **authorized-relayer `deliverDirect`**
    (transport-agnostic) since the LZ testnet reverse leg stalls (GENLAYER-FEEDBACK #8).
-2. **Deploy + smoke.** Deploy the boilerplate (BridgeForwarder/Receiver on the ZKsync Era Sepolia hub +
-   BridgeSender/Receiver ICs on GenLayer), deploy `VerdictStoneHub` + `VerdictStoneBridgeReceiver` to the
-   hub, wire `hub.setBridgeReceiver` / `hub.setGenlayerSource` / `receiver.setAuthorizedRelayer`, and on
-   GenLayer set VerdictStone's `bridge_sender` / `bridge_receiver` / `hub_contract` / `hub_eid`, run the
-   relay, prove mint → applyMint and a transfer → owner_changed → rebind end-to-end. Hub spans **ZKsync Era
-   Sepolia + Base Sepolia** (decided 2026-06-13). NOTE: ZKsync Era needs the `@matterlabs/hardhat-zksync`
-   (zksolc) toolchain + a network entry — hardhat.config currently has only Base Sepolia, which is
-   deployable today with the existing config/key.
+2. **Bridge reuse — no boilerplate redeploy.** The GenLayer bridge boilerplate is already deployed by
+   Tokenpost (vendored at `Tokenpost/spikes/genlayer-bridge/`). Reuse is safe: the GL BridgeSender is a
+   shared self-describing queue and Tokenpost's relay already does `if (target !== claimLauncher) continue`,
+   so stone messages are inert to the live claim loop. VerdictStone points its `bridge_sender`/
+   `bridge_receiver` at the same GL ICs.
+
+3. **Hub deployed to Base Sepolia (2026-06-13)** — proving deployment for the GL→hub deliverDirect path
+   (chain-agnostic; ZKsync Era Sepolia remains the canonical hub, pending the `@matterlabs/hardhat-zksync`
+   zksolc toolchain). `deploy/deploy-stone-hub.cjs` (`pnpm deploy:stone:hub`), recorded in
+   `deploy/deployments/stone-base-sepolia.json`:
+   - `VerdictStoneBridgeReceiver`: `0x4Caad3aA8Fe34616479fFB9E8810367eED64c55c`
+   - `VerdictStoneHub`: `0x6D612207Eea47Ccbd2Bab0D99bAaa54fFb189609` (bridgeReceiver wired; genlayerSource pending)
+
+4. **DONE — live loop wired + proven (2026-06-16).** The stone relay lives **in this repo** (not in
+   Tokenpost's Supabase function) so it is self-contained and reviewable. New artifacts:
+   - `deploy/stone-relay.mjs` — bidirectional, transport-agnostic authorized-relayer relay. GL→hub:
+     poll the shared GL BridgeSender outbox, keep only `target_contract == hub`, `deliverDirect` to the
+     EVM receiver. hub→GL: watch `StoneOwnerChanged`, build the inbound abi payload, call the GL
+     BridgeReceiver's `receive_message`. Dedup on-chain both ways → inert to Tokenpost's claim loop.
+     (`pnpm relay:stone`, `STONE_RELAY_ONCE=1` for a single pass.)
+   - `deploy/deploy-stone.mjs` (`pnpm deploy:stone`) — deploys VerdictStone wired to the reused GL bridge.
+   - `deploy/wire-stone-hub.cjs` (`pnpm wire:stone:hub`) — attaches to the existing hub/receiver (no
+     redeploy) and sets `genlayerSource` + `authorizedRelayer` (idempotent).
+   - `deploy/smoke-stone.mjs` / `deploy/smoke-stone-inbound.mjs` — OUT and IN smokes.
+
+   **Live deployment (studionet + Base Sepolia, deployer/relay `0xa64f1832…`):**
+   - `VerdictStone` (GenLayer studionet): **`0x0F603A6BBf535F173804491141fd2b67e8C2C94E`**
+     (`bridge_sender`/`bridge_receiver` = Tokenpost's GL ICs; `hub_contract` = the Base hub; `hub_eid` 40245).
+   - `hub.genlayerSource` = the VerdictStone IC; `receiver.authorizedRelayer[0xa64f…]` = true. The GL
+     BridgeReceiver already had `0xa64f…` authorized (same wallet as Tokenpost's relay) so the IN leg
+     needed no extra setup.
+
+   **Proven end-to-end:**
+   - **OUT:** GL `request_mint` → BridgeSender outbox → relay `deliverDirect` → `hub.applyMint` —
+     Stone token 1 minted on Base, profile `0x…a64f…`, level 2 (`hub.getStone(1)` asserted).
+   - **IN:** hub `safeTransferFrom` → `StoneOwnerChanged` → relay → GL `receive_message` →
+     `process_bridge_message` (owner_changed). GL BridgeReceiver `is_message_processed` = true for the
+     delivery (transport proven; the rebind handler runs in the async follow-up tx and is covered by the
+     VerdictStone direct suite).
+
+   **Follow-ups (not blockers):** ZKsync Era Sepolia remains the spec's canonical hub (pending the
+   `@matterlabs/hardhat-zksync` zksolc toolchain — Base Sepolia is the proving deployment); the hub→GL
+   `effective_level` push (perks sync) is built into the wire format but not yet emitted by a relay
+   trigger (only `owner_changed` is wired); for production the stone relay should run on a scheduler
+   (cron/pg_cron) like Tokenpost's.
