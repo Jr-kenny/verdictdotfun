@@ -1,0 +1,23 @@
+{
+  "network": "base-sepolia",
+  "chainId": 84532,
+  "deployedAt": "2026-06-16",
+  "deployer": "0xa64f1832D8Dd4F8c6Ad434D3942a09fEFc9ad2b3",
+  "explorer": "https://sepolia.basescan.org",
+  "note": "Value rail (sub-project #1). depositEth/depositToken emit CreditPurchased -> credit-bridge mirrors to the GenLayer CreditLedger; ledger redeem -> vault.redeem (onlyBridge). bridge authority = the credit-bridge runner wallet.",
+  "contracts": {
+    "CreditVault": {
+      "address": "0x604bb7eb4dBCD4D1bd2A11166367284a5aFD1a9a",
+      "constructorArgs": {
+        "initialOwner": "0xa64f1832D8Dd4F8c6Ad434D3942a09fEFc9ad2b3",
+        "initialBridge": "0xa64f1832D8Dd4F8c6Ad434D3942a09fEFc9ad2b3"
+      },
+      "allowedTokens": {
+        "USDC": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+        "ETH": "native (depositEth, no allowlist)"
+      }
+    }
+  },
+  "pairedLedger": "0xeb70F3bbC2706c9cC2A83BEf27B2D07fa1b07De5 (GenLayer studionet)",
+  "integrationGap": "core create_room does not yet thread stake into the ledger escrow (deferred 1C task); the deposit->credit and ledger->redeem rails are live, in-game credit wagering needs the core<->ledger stake wiring."
+}
