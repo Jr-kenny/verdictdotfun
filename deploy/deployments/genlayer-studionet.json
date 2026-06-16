@@ -1,0 +1,21 @@
+{
+  "network": "studionet",
+  "deployedAt": "2026-06-16",
+  "deployer": "0xa64f1832D8Dd4F8c6Ad434D3942a09fEFc9ad2b3",
+  "explorer": "https://studio.genlayer.com/contracts?import-contract=",
+  "note": "Rebuilt game engine with the generic dynamic mode registry. Replaces the hackathon-era contracts (old core 0x26B1ed21..., argue 0x70836563..., riddle 0xF50432BB...). Core registers argue + riddle via set_mode_contract.",
+  "contracts": {
+    "verdictdotfun": {
+      "role": "core / mode registry",
+      "address": "0x2d53d797cEa724dfd3d0C1bB7512e4d7C64583D5"
+    },
+    "argue": {
+      "role": "game mode",
+      "address": "0x56ff0722927E6e2e6b2CA5C9FfD2f4B75A0a7B39"
+    },
+    "riddle": {
+      "role": "game mode",
+      "address": "0x41Be0Ba7C08227A3e42FAAE357caA80D1a86784c"
+    }
+  }
+}

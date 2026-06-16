@@ -12,9 +12,12 @@ The current shipped modes are `argue` and `riddle`.
 
 ## Deployed contracts
 
-- Core (`verdictdotfun`): [0x26B1ed21bC73895531446e4B1B913F0a87e8BFA1](https://studio.genlayer.com/contracts?import-contract=0x26B1ed21bC73895531446e4B1B913F0a87e8BFA1)
-- Mode (`argue`): [0x70836563637f4EdeC812e1ECA58AC6a21591B048](https://studio.genlayer.com/contracts?import-contract=0x70836563637f4EdeC812e1ECA58AC6a21591B048)
-- Mode (`riddle`): [0xF50432BB1A90DE73A5e1D128b272E7294EE353C1](https://studio.genlayer.com/contracts?import-contract=0xF50432BB1A90DE73A5e1D128b272E7294EE353C1)
+StudioNet, rebuilt engine with the generic mode registry (replaces the hackathon contracts):
+
+- Core (`verdictdotfun`): [0x2d53d797cEa724dfd3d0C1bB7512e4d7C64583D5](https://studio.genlayer.com/contracts?import-contract=0x2d53d797cEa724dfd3d0C1bB7512e4d7C64583D5)
+- Mode (`argue`): [0x56ff0722927E6e2e6b2CA5C9FfD2f4B75A0a7B39](https://studio.genlayer.com/contracts?import-contract=0x56ff0722927E6e2e6b2CA5C9FfD2f4B75A0a7B39)
+- Mode (`riddle`): [0x41Be0Ba7C08227A3e42FAAE357caA80D1a86784c](https://studio.genlayer.com/contracts?import-contract=0x41Be0Ba7C08227A3e42FAAE357caA80D1a86784c)
+- Verdict Stone (NFT): hub `0x6D612207Eea47Ccbd2Bab0D99bAaa54fFb189609` (Base Sepolia), GenLayer IC `0x0F603A6BBf535F173804491141fd2b67e8C2C94E`
 
 ## Why this project exists
 
