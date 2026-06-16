@@ -1,0 +1,12 @@
+{
+  "network": "studionet",
+  "deployedAt": "2026-06-16",
+  "deployer": "0xa64f1832D8Dd4F8c6Ad434D3942a09fEFc9ad2b3",
+  "contract": "CreditLedger",
+  "address": "0xeb70F3bbC2706c9cC2A83BEf27B2D07fa1b07De5",
+  "config": {
+    "core": "0x2d53d797cEa724dfd3d0C1bB7512e4d7C64583D5",
+    "bridge": "0xa64f1832D8Dd4F8c6Ad434D3942a09fEFc9ad2b3"
+  },
+  "note": "GenLayer value-rail ledger. bridge authority = the credit-bridge runner wallet."
+}

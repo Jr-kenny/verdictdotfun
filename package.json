@@ -22,6 +22,7 @@
     "deploy:smoke:c2c": "node ./deploy/smoke-contract-to-contract.mjs",
     "loadtest:studionet": "node ./scripts/studionet-loadtest.mjs",
     "relayer": "node ./deploy/relayer.mjs",
+    "deploy:ledger": "node ./deploy/deploy-credit-ledger.mjs",
     "credit:bridge": "node ./deploy/credit-bridge.mjs",
     "smoke:credits": "node ./deploy/smoke-credit-loop.mjs",
     "compile:evm": "hardhat compile --config hardhat.config.cjs",
