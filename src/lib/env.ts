@@ -47,5 +47,7 @@ export const arenaEnv = {
   hasConfiguredModes: configuredModes.length > 0,
   verdictNftAddress: cleanValue(import.meta.env.VITE_VERDICT_NFT_CONTRACT_ADDRESS),
   hasVerdictNftAddress: Boolean(cleanValue(import.meta.env.VITE_VERDICT_NFT_CONTRACT_ADDRESS)),
+  stoneHubAddress: cleanValue(import.meta.env.VITE_STONE_HUB_ADDRESS),
+  hasStoneHubAddress: Boolean(cleanValue(import.meta.env.VITE_STONE_HUB_ADDRESS)),
   profileEvmRpcUrl: cleanValue(import.meta.env.VITE_BASE_SEPOLIA_RPC_URL) ?? "https://sepolia.base.org",
 } as const;
