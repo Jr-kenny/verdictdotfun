@@ -107,6 +107,8 @@ function asStatus(value: unknown): ArenaRoomStatus {
     status === "ready_to_start" ||
     status === "studying" ||
     status === "active" ||
+    status === "drawing" ||
+    status === "guessing" ||
     status === "provisional" ||
     status === "void" ||
     status === "resolved"
@@ -235,6 +237,20 @@ function parseRoom(mode: ArenaMode, raw: unknown): ArenaRoom | null {
     ownerAttemptsUsed: record.owner_submission_order === undefined ? undefined : asNumber(record.owner_submission_order),
     opponentAttemptsUsed: record.opponent_submission_order === undefined ? undefined : asNumber(record.opponent_submission_order),
     revealedAnswer: record.revealed_answer === undefined ? undefined : asString(record.revealed_answer),
+    ownerDrawing: asString(record.owner_drawing),
+    opponentDrawing: asString(record.opponent_drawing),
+    persona: asString(record.persona),
+    ownerTranscript: asString(record.owner_transcript),
+    opponentTranscript: asString(record.opponent_transcript),
+    ownerMeter: asNumber(record.owner_meter),
+    opponentMeter: asNumber(record.opponent_meter),
+    ownerTurns: asNumber(record.owner_turns),
+    opponentTurns: asNumber(record.opponent_turns),
+    ownerDone: asBoolean(record.owner_done),
+    opponentDone: asBoolean(record.opponent_done),
+    question: asString(record.question),
+    source: asString(record.source),
+    outcome: asString(record.outcome),
   };
 }
 
@@ -613,6 +629,94 @@ export async function forfeitRoom(
 
   void waitForReceipt(account, provider, hash, TransactionStatus.FINALIZED).catch(() => undefined);
   return hash;
+}
+
+async function writeRoomAction(
+  mode: ArenaMode,
+  account: Address,
+  provider: BrowserEthereumProvider,
+  functionName: string,
+  args: string[],
+  status: TransactionStatus = TransactionStatus.ACCEPTED,
+) {
+  const client = createWalletClient(account, provider);
+  const target = await resolveRoomTarget(mode);
+  if (!target) {
+    throw new Error("Room does not exist.");
+  }
+  const hash = await writeContractWithRetry(client, {
+    address: target.address,
+    functionName,
+    args,
+    value: 0n,
+  });
+  void waitForReceipt(account, provider, hash, status).catch(() => undefined);
+  return hash;
+}
+
+// Sketch & Guess
+export function submitDrawing(
+  mode: ArenaMode,
+  account: Address,
+  provider: BrowserEthereumProvider,
+  roomId: string,
+  cid: string,
+) {
+  return writeRoomAction(mode, account, provider, "submit_drawing", [roomId, cid.trim()]);
+}
+
+export function submitGuess(
+  mode: ArenaMode,
+  account: Address,
+  provider: BrowserEthereumProvider,
+  roomId: string,
+  guess: string,
+) {
+  return writeRoomAction(mode, account, provider, "submit_guess", [roomId, guess.trim()], TransactionStatus.FINALIZED);
+}
+
+// Persuade
+export function submitTurn(
+  mode: ArenaMode,
+  account: Address,
+  provider: BrowserEthereumProvider,
+  roomId: string,
+  message: string,
+) {
+  return writeRoomAction(mode, account, provider, "submit_turn", [roomId, message.trim()]);
+}
+
+export function finishPersuading(
+  mode: ArenaMode,
+  account: Address,
+  provider: BrowserEthereumProvider,
+  roomId: string,
+) {
+  return writeRoomAction(mode, account, provider, "finish_persuading", [roomId], TransactionStatus.FINALIZED);
+}
+
+// Pin an image (data URL) to IPFS via the serverless route, returning a bare CID.
+// Falls back to a clear error so the UI can offer manual CID entry.
+export async function pinImage(dataUrl: string): Promise<string> {
+  const response = await fetch("/api/pin", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ dataUrl }),
+  });
+  if (!response.ok) {
+    let detail = "";
+    try {
+      detail = ((await response.json()) as { error?: string }).error ?? "";
+    } catch {
+      detail = "";
+    }
+    throw new Error(detail || "Pinning is not configured. Paste a CID manually instead.");
+  }
+  const data = (await response.json()) as { cid?: string };
+  if (!data.cid) {
+    throw new Error("Pinning did not return a CID. Paste a CID manually instead.");
+  }
+  return data.cid;
 }
 
 export function isEmptyAddress(address: string) {

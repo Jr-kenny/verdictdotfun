@@ -73,4 +73,21 @@ export interface ArenaRoom {
   revealedAnswer?: string;
   ownerAttemptsUsed?: number;
   opponentAttemptsUsed?: number;
+  // sketch
+  ownerDrawing?: string;
+  opponentDrawing?: string;
+  // persuade
+  persona?: string;
+  ownerTranscript?: string;
+  opponentTranscript?: string;
+  ownerMeter?: number;
+  opponentMeter?: number;
+  ownerTurns?: number;
+  opponentTurns?: number;
+  ownerDone?: boolean;
+  opponentDone?: boolean;
+  // oracle
+  question?: string;
+  source?: string;
+  outcome?: string;
 }
