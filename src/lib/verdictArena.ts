@@ -378,12 +378,14 @@ export async function createRoom(
     category: string;
     argueStyle?: ArgueStyle;
     profileAddress?: string | null;
+    stake?: bigint; // atto-credits wagered per player (0 = free room)
   },
 ) {
   const client = createWalletClient(account, provider);
   if (arenaEnv.hasVdtCoreAddress && !room.profileAddress) {
     throw new Error("Create your VerdictDotFun profile before opening a room.");
   }
+  const stake = (room.stake ?? 0n).toString();
 
   const hash = await writeContractWithRetry(
     client,
@@ -397,6 +399,7 @@ export async function createRoom(
             room.category,
             room.profileAddress ?? EMPTY_ADDRESS,
             room.argueStyle ?? "debate",
+            stake,
           ],
           value: 0n,
         }
@@ -405,8 +408,8 @@ export async function createRoom(
           functionName: "create_room",
           args:
             mode === "argue"
-              ? [room.roomId, room.category, room.profileAddress ?? EMPTY_ADDRESS, room.argueStyle ?? "debate"]
-              : [room.roomId, room.category, room.profileAddress ?? EMPTY_ADDRESS],
+              ? [room.roomId, room.category, room.profileAddress ?? EMPTY_ADDRESS, room.argueStyle ?? "debate", stake]
+              : [room.roomId, room.category, room.profileAddress ?? EMPTY_ADDRESS, stake],
           value: 0n,
         },
   );
