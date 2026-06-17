@@ -51,5 +51,11 @@ export const arenaEnv = {
   hasStoneHubAddress: Boolean(cleanValue(import.meta.env.VITE_STONE_HUB_ADDRESS)),
   stoneMarketAddress: cleanValue(import.meta.env.VITE_STONE_MARKET_ADDRESS),
   hasStoneMarketAddress: Boolean(cleanValue(import.meta.env.VITE_STONE_MARKET_ADDRESS)),
+  creditVaultAddress: cleanValue(import.meta.env.VITE_CREDIT_VAULT_ADDRESS),
+  creditLedgerAddress: cleanValue(import.meta.env.VITE_CREDIT_LEDGER_ADDRESS),
+  hasCreditRail: Boolean(
+    cleanValue(import.meta.env.VITE_CREDIT_VAULT_ADDRESS) && cleanValue(import.meta.env.VITE_CREDIT_LEDGER_ADDRESS),
+  ),
+  creditsPerEth: Number(import.meta.env.VITE_CREDITS_PER_ETH ?? "2000"),
   profileEvmRpcUrl: cleanValue(import.meta.env.VITE_BASE_SEPOLIA_RPC_URL) ?? "https://sepolia.base.org",
 } as const;

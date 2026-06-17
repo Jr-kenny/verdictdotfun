@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Gavel, Gem, Trophy } from "lucide-react";
+import { ChevronDown, Coins, Gavel, Gem, Trophy } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -53,7 +53,7 @@ const Header = ({ centered = false }: { centered?: boolean }) => {
   const localProfileName = localProfileQuery.data;
   const verdictBadge = verdictBadgeQuery.data;
   const displayName = profile?.name ?? (!coreContractConfigured ? localProfileName : null) ?? "Profile";
-  const showNavLinks = ["/lobby", "/leaderboard", "/market"].includes(location.pathname);
+  const showNavLinks = ["/lobby", "/leaderboard", "/market", "/credits"].includes(location.pathname);
   const navLinkClass =
     "hidden items-center gap-2 rounded-full border border-border/70 bg-card/70 px-4 py-2 text-sm font-heading font-semibold tracking-[0.18em] text-muted-foreground transition hover:border-primary/50 hover:text-foreground md:flex";
 
@@ -111,6 +111,12 @@ const Header = ({ centered = false }: { centered?: boolean }) => {
         <span className="font-heading text-lg font-bold tracking-widest">VERDICT.FUN</span>
       </Link>
       <div className="ml-auto flex items-center gap-3">
+        {showNavLinks && location.pathname !== "/credits" && (
+          <Link to="/credits" className={navLinkClass}>
+            <Coins className="h-4 w-4 text-primary" />
+            Credits
+          </Link>
+        )}
         {showNavLinks && location.pathname !== "/market" && (
           <Link to="/market" className={navLinkClass}>
             <Gem className="h-4 w-4 text-primary" />
