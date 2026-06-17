@@ -258,6 +258,155 @@ Rules:
             room.id, MODE, room.owner, room.opponent, room.stake
         )
 
+    @gl.public.write
+    def resolve_room(self, room_id: str):
+        room = self._require_room(room_id)
+
+        if room.opponent == ZERO_ADDRESS:
+            raise gl.vm.UserError("[EXPECTED] A bluff room needs two players.")
+        if not room.claim:
+            raise gl.vm.UserError("[EXPECTED] Start the room before resolving it.")
+        if not room.owner_submission or not room.opponent_submission:
+            raise gl.vm.UserError("[EXPECTED] Both players must submit before resolution.")
+        if room.status == "resolved":
+            raise gl.vm.UserError("[EXPECTED] Room already has a verdict.")
+
+        self._finalize_room(room)
+
+    def _finalize_room(self, room: BluffRoom):
+        if room.status == "resolved":
+            raise gl.vm.UserError("[EXPECTED] Room already has a verdict.")
+
+        prompt = self._build_verdict_prompt(room)
+
+        def leader_fn():
+            response = gl.nondet.exec_prompt(prompt, response_format="json")
+            return self._normalize_verdict(response)
+
+        def validator_fn(leader_result):
+            if not isinstance(leader_result, gl.vm.Return):
+                return False
+            return self._is_valid_verdict(leader_result.calldata)
+
+        verdict = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
+
+        room.owner_score = verdict["owner_score"]
+        room.opponent_score = verdict["opponent_score"]
+        room.verdict_reasoning = verdict["reasoning"]
+        winner = room.owner if verdict["winner"] == "owner" else room.opponent
+        self._enter_provisional(room, winner)
+
+    def _build_verdict_prompt(self, room: BluffRoom) -> str:
+        return f"""You are judging a BLUFF match — a persuasion duel.
+
+Both players were given the SAME claim and BOTH argued it is TRUE. Your job is to decide
+who argued more convincingly. IMPORTANT: judge persuasive skill ONLY — rhetorical force,
+internal consistency, use of concrete reasoning and vivid framing. DO NOT reward or punish
+based on whether the claim is actually true; the claim may well be false. The better bluffer
+wins.
+
+CLAIM (both defend this as true):
+{room.claim}
+
+{room.owner_name} (owner) argued:
+{room.owner_submission}
+
+{room.opponent_name} (opponent) argued:
+{room.opponent_submission}
+
+Return valid JSON only with these keys:
+- "winner": "owner" or "opponent"
+- "owner_score": integer 0-100
+- "opponent_score": integer 0-100
+- "reasoning": one or two sentences on who bluffed more convincingly
+The winner MUST be the player with the higher score.""".strip()
+
+    def _normalize_verdict(self, response: typing.Any) -> TreeMap[str, typing.Any]:
+        data = response if isinstance(response, dict) else {}
+        winner = str(data.get("winner", "")).strip().lower()
+        try:
+            owner_score = int(data.get("owner_score", 0))
+            opponent_score = int(data.get("opponent_score", 0))
+        except (TypeError, ValueError):
+            owner_score, opponent_score = 0, 0
+        owner_score = max(0, min(100, owner_score))
+        opponent_score = max(0, min(100, opponent_score))
+        if winner not in ("owner", "opponent"):
+            winner = "owner" if owner_score >= opponent_score else "opponent"
+        return {
+            "winner": winner,
+            "owner_score": u16(owner_score),
+            "opponent_score": u16(opponent_score),
+            "reasoning": str(data.get("reasoning", "")).strip()[:600],
+        }
+
+    def _is_valid_verdict(self, verdict: typing.Any) -> bool:
+        if not isinstance(verdict, dict):
+            return False
+        if verdict.get("winner") not in ("owner", "opponent"):
+            return False
+        return 0 <= int(verdict.get("owner_score", -1)) <= 100 and 0 <= int(verdict.get("opponent_score", -1)) <= 100
+
+    def _enter_provisional(self, room: BluffRoom, winner: Address):
+        room.status = "provisional"
+        room.winner = winner
+        room.provisional_at = u256(self._now_epoch())
+        self.rooms[room.id] = room
+        if self.credit_ledger != ZERO_ADDRESS and int(room.stake) > 0:
+            CreditLedgerIface(self.credit_ledger).emit(on="accepted").set_provisional(room.id, winner)
+
+    def _settle_winner(self, room: BluffRoom):
+        room.status = "resolved"
+        self.rooms[room.id] = room
+        loser = self._resolved_loser(room)
+        if self.credit_ledger != ZERO_ADDRESS and int(room.stake) > 0:
+            CreditLedgerIface(self.credit_ledger).emit(on="accepted").finalize_winner(room.id, room.winner)
+        self._emit_profile_result(room.id, room.winner, loser, self._wager_bonus_xp(room))
+
+    def _wager_bonus_xp(self, room: BluffRoom) -> int:
+        # Wagered wins are worth more: +1 XP per credit staked, capped so a single match cannot
+        # dwarf the ladder (base win XP is 100; the cap keeps a wagered win at most a few x).
+        return min(int(room.stake) // (10 ** 18), 200)
+
+    def _settle_void(self, room: BluffRoom):
+        if self.credit_ledger != ZERO_ADDRESS and int(room.stake) > 0:
+            CreditLedgerIface(self.credit_ledger).emit(on="accepted").finalize_void(room.id)
+
+    def _resolved_loser(self, room: BluffRoom) -> Address:
+        if room.winner == room.owner:
+            return room.opponent
+        if room.winner == room.opponent:
+            return room.owner
+        return ZERO_ADDRESS
+
+    def _emit_profile_result(self, room_id: str, winner: Address, loser: Address, bonus_xp: int = 0):
+        if self.core_contract == ZERO_ADDRESS:
+            return
+        winner = self._normalize_address(winner)
+        loser = self._normalize_address(loser)
+        if winner == ZERO_ADDRESS or loser == ZERO_ADDRESS:
+            return
+
+        match_id = self._match_id(room_id)
+        core = self._core()
+        core.emit(on="accepted").apply_match_result(winner, match_id, True, MODE, u16(int(bonus_xp)))
+        core.emit(on="accepted").apply_match_result(loser, match_id, False, MODE, u16(0))
+
+    def _match_id(self, room_id: str) -> str:
+        return f"{MODE}:{room_id}"
+
+    @gl.public.write
+    def finalize_room(self, room_id: str):
+        room = self._require_room(room_id)
+        if room.status != "provisional":
+            raise gl.vm.UserError("[EXPECTED] Room is not awaiting finalization.")
+        if room.appeal_state == "filed":
+            raise gl.vm.UserError("[EXPECTED] Resolve the pending appeal before finalizing.")
+        elapsed = self._now_epoch() - int(room.provisional_at)
+        if elapsed < int(self.challenge_window_seconds):
+            raise gl.vm.UserError("[EXPECTED] Challenge window is still open.")
+        self._settle_winner(room)
+
     @gl.public.view
     def get_room(self, room_id: str) -> TreeMap[str, typing.Any]:
         normalized_id = room_id.strip().upper()

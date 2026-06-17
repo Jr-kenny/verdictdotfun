@@ -68,3 +68,31 @@ def test_bluff_submit_requires_start_and_stores(direct_vm, direct_deploy, direct
     room = contract.get_room("ROOM01")
     assert room.owner_submission != ""
     assert room.status == "active"
+
+
+def test_bluff_full_resolution_flow(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy("contracts/bluff_game.py", ZERO_ADDRESS)
+    direct_vm.mock_llm(r"(?s).*Generate one hard-to-defend claim.*",
+                       {"claim": "Cold showers are the single most underrated productivity tool."})
+    direct_vm.sender = direct_alice
+    contract.register_profile("Alice")
+    contract.create_room("ROOM01", "Health", ZERO_ADDRESS, 0)
+    direct_vm.sender = direct_bob
+    contract.register_profile("Bob")
+    contract.join_room("ROOM01")
+    direct_vm.sender = direct_alice
+    contract.start_room("ROOM01")
+    contract.submit_entry("ROOM01", "Cold exposure spikes norepinephrine, which sharpens focus for hours; the discomfort is exactly the training stimulus.")
+
+    direct_vm.mock_llm(
+        r"(?s).*You are judging a BLUFF match.*Cold showers are the single most underrated.*",
+        {"winner": "owner", "owner_score": 88, "opponent_score": 71,
+         "reasoning": "Alice grounded the claim in a concrete mechanism and stayed on the persuasive task."},
+    )
+    direct_vm.sender = direct_bob
+    contract.submit_entry("ROOM01", "Anyone can call a habit underrated; the bar is whether it beats sleep and caffeine, and cold showers plausibly do for many.")
+
+    room = contract.get_room("ROOM01")
+    assert room.status == "provisional"
+    assert room.owner_score == 88
+    assert room.winner != ZERO_ADDRESS
