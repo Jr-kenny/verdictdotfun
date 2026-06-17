@@ -1,5 +1,5 @@
 import { createAppKit } from "@reown/appkit/react";
-import type { AppKitNetwork } from "@reown/appkit/networks";
+import { baseSepolia, type AppKitNetwork } from "@reown/appkit/networks";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import { arenaEnv } from "@/lib/env";
 import { getArenaChain } from "@/lib/genlayer";
@@ -29,7 +29,9 @@ function getAppUrl() {
 const projectId = getProjectId();
 
 const arenaNetwork = getArenaChain() as AppKitNetwork;
-const networks = [arenaNetwork] as [AppKitNetwork, ...AppKitNetwork[]];
+// Base Sepolia is registered so the wallet can switch to it for the EVM rails (buy credits / redeem,
+// Stone Market). The arena (GenLayer) chain stays the default for gameplay.
+const networks = [arenaNetwork, baseSepolia] as [AppKitNetwork, ...AppKitNetwork[]];
 
 const metadata = {
   name: "Verdict.fun",
