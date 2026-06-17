@@ -1,17 +1,25 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { ArrowUpRight, Gem, Layers, Lock, ShieldCheck, Sparkles, Trophy } from "lucide-react";
+import { formatEther, parseEther } from "viem";
+import { ArrowUpRight, Gem, Layers, Loader2, ShieldCheck, Sparkles, Tag, Trophy } from "lucide-react";
+import { toast } from "sonner";
 import Header from "@/components/Header";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useArena } from "@/context/ArenaContext";
 import { arenaEnv } from "@/lib/env";
 import {
+  buyStone,
+  cancelListing,
   fetchAllStones,
+  fetchListings,
   fetchOwnerStones,
+  listStone,
   shortProfile,
   tierForLevel,
+  type Listing,
   type Stone,
 } from "@/lib/verdictStone";
 
@@ -44,8 +52,24 @@ function StoneFacet({ level, size = 72 }: { level: number; size?: number }) {
   );
 }
 
-function StoneCard({ stone, you, index }: { stone: Stone; you?: boolean; index: number }) {
+interface CardProps {
+  stone: Stone;
+  you: boolean;
+  listing?: Listing;
+  index: number;
+  busy: boolean;
+  marketReady: boolean;
+  onBuy: (stone: Stone, listing: Listing) => void;
+  onList: (stone: Stone, priceEth: string) => void;
+  onCancel: (stone: Stone) => void;
+}
+
+function StoneCard({ stone, you, listing, index, busy, marketReady, onBuy, onList, onCancel }: CardProps) {
   const tier = tierForLevel(stone.level);
+  const [listing_, setListing_] = useState(false);
+  const [price, setPrice] = useState("");
+  const listed = Boolean(listing?.active);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -61,10 +85,7 @@ function StoneCard({ stone, you, index }: { stone: Stone; you?: boolean; index: 
       <div className="relative flex items-start justify-between">
         <StoneFacet level={stone.level} />
         <div className="text-right">
-          <p
-            className="font-heading text-[11px] font-bold uppercase tracking-[0.22em]"
-            style={{ color: `hsl(${tier.hsl})` }}
-          >
+          <p className="font-heading text-[11px] font-bold uppercase tracking-[0.22em]" style={{ color: `hsl(${tier.hsl})` }}>
             {tier.name}
           </p>
           <p className="mt-1 font-mono text-xs text-muted-foreground">Stone #{stone.tokenId}</p>
@@ -88,15 +109,53 @@ function StoneCard({ stone, you, index }: { stone: Stone; you?: boolean; index: 
           <dt className="text-muted-foreground">Roaming on</dt>
           <dd className="text-xs">{CHAIN_LABEL[stone.location] ?? `chain ${stone.location}`}</dd>
         </div>
+        {listed && (
+          <div className="flex items-center justify-between border-t border-border/50 pt-2">
+            <dt className="flex items-center gap-1 text-primary"><Tag className="h-3.5 w-3.5" /> Listed</dt>
+            <dd className="font-heading text-sm font-bold">{formatEther(listing!.price)} ETH</dd>
+          </div>
+        )}
       </dl>
-      <button
-        disabled
-        title="Secondary trading opens with the market contract"
-        className="relative mt-5 flex w-full items-center justify-center gap-2 rounded-xl border border-border/70 bg-background/60 py-2.5 text-xs font-heading font-semibold uppercase tracking-[0.18em] text-muted-foreground"
-      >
-        <Lock className="h-3.5 w-3.5" />
-        Trading opens soon
-      </button>
+
+      {/* actions */}
+      <div className="relative mt-5">
+        {!marketReady ? (
+          <p className="text-center text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Market offline</p>
+        ) : listed && !you ? (
+          <Button className="w-full font-heading uppercase tracking-[0.16em]" disabled={busy} onClick={() => onBuy(stone, listing!)}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : `Buy · ${formatEther(listing!.price)} ETH`}
+          </Button>
+        ) : listed && you ? (
+          <Button variant="secondary" className="w-full" disabled={busy} onClick={() => onCancel(stone)}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Cancel listing"}
+          </Button>
+        ) : you && !listed ? (
+          listing_ ? (
+            <div className="flex gap-2">
+              <Input
+                value={price}
+                onChange={(e) => setPrice(e.target.value.replace(/[^0-9.]/g, ""))}
+                placeholder="Price in ETH"
+                inputMode="decimal"
+                className="bg-background/60"
+              />
+              <Button
+                disabled={busy || !price || Number(price) <= 0}
+                onClick={() => onList(stone, price)}
+                className="font-heading uppercase tracking-[0.14em]"
+              >
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "List"}
+              </Button>
+            </div>
+          ) : (
+            <Button variant="secondary" className="w-full" onClick={() => setListing_(true)}>
+              <Tag className="mr-2 h-4 w-4" /> List for sale
+            </Button>
+          )
+        ) : (
+          <p className="text-center text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Not listed</p>
+        )}
+      </div>
     </motion.div>
   );
 }
@@ -113,15 +172,13 @@ function StatPill({ label, value, accent }: { label: string; value: string; acce
 }
 
 const StoneMarket = () => {
-  const { walletAddress, openWalletModal } = useArena();
+  const { walletAddress, provider, openWalletModal, ensureProfileNetwork } = useArena();
+  const queryClient = useQueryClient();
   const configured = arenaEnv.hasStoneHubAddress;
+  const marketReady = arenaEnv.hasStoneMarketAddress;
+  const [busyToken, setBusyToken] = useState<string | null>(null);
 
-  const collectionQuery = useQuery({
-    queryKey: ["stones", "all"],
-    queryFn: fetchAllStones,
-    enabled: configured,
-    refetchInterval: 30_000,
-  });
+  const collectionQuery = useQuery({ queryKey: ["stones", "all"], queryFn: fetchAllStones, enabled: configured, refetchInterval: 30_000 });
   const vaultQuery = useQuery({
     queryKey: ["stones", "owner", walletAddress],
     queryFn: () => fetchOwnerStones(walletAddress!),
@@ -132,6 +189,78 @@ const StoneMarket = () => {
   const highest = useMemo(() => stones.reduce((m, s) => Math.max(m, s.level), 0), [stones]);
   const vault = vaultQuery.data;
 
+  const tokenIds = useMemo(() => {
+    const ids = new Set<string>();
+    stones.forEach((s) => ids.add(s.tokenId));
+    vault?.stones.forEach((s) => ids.add(s.tokenId));
+    return [...ids];
+  }, [stones, vault]);
+
+  const listingsQuery = useQuery({
+    queryKey: ["stone-listings", tokenIds],
+    queryFn: () => fetchListings(tokenIds),
+    enabled: marketReady && tokenIds.length > 0,
+    refetchInterval: 30_000,
+  });
+  const listings = listingsQuery.data ?? {};
+
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["stones"] }),
+      queryClient.invalidateQueries({ queryKey: ["stone-listings"] }),
+    ]);
+
+  const action = useMutation({
+    mutationFn: async (run: () => Promise<unknown>) => {
+      if (!walletAddress || !provider) throw new Error("Connect a wallet first.");
+      await ensureProfileNetwork();
+      return run();
+    },
+    onSuccess: async () => {
+      await refresh();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Transaction failed."),
+    onSettled: () => setBusyToken(null),
+  });
+
+  const onBuy = (stone: Stone, listing: Listing) => {
+    if (!walletAddress) return openWalletModal();
+    setBusyToken(stone.tokenId);
+    action.mutate(async () => {
+      await buyStone(stone.tokenId, listing.price, walletAddress, provider!);
+      toast.success(`Bought Stone #${stone.tokenId}.`);
+    });
+  };
+  const onList = (stone: Stone, priceEth: string) => {
+    setBusyToken(stone.tokenId);
+    action.mutate(async () => {
+      await listStone(stone.tokenId, parseEther(priceEth), walletAddress!, provider!);
+      toast.success(`Listed Stone #${stone.tokenId} for ${priceEth} ETH.`);
+    });
+  };
+  const onCancel = (stone: Stone) => {
+    setBusyToken(stone.tokenId);
+    action.mutate(async () => {
+      await cancelListing(stone.tokenId, walletAddress!, provider!);
+      toast.success(`Cancelled the listing for Stone #${stone.tokenId}.`);
+    });
+  };
+
+  const renderCard = (s: Stone, i: number) => (
+    <StoneCard
+      key={s.tokenId}
+      stone={s}
+      you={s.owner.toLowerCase() === walletAddress?.toLowerCase()}
+      listing={listings[s.tokenId]}
+      index={i}
+      busy={busyToken === s.tokenId}
+      marketReady={marketReady}
+      onBuy={onBuy}
+      onList={onList}
+      onCancel={onCancel}
+    />
+  );
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Header />
@@ -141,7 +270,6 @@ const StoneMarket = () => {
           style={{ background: "radial-gradient(ellipse at 50% -10%, hsl(1 77% 55% / 0.18), transparent 60%)" }}
         />
         <div className="relative mx-auto max-w-6xl">
-          {/* Hero */}
           <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
             <p className="flex items-center gap-2 font-heading text-xs font-semibold uppercase tracking-[0.4em] text-primary">
               <Gem className="h-4 w-4" /> Verdict // Reliquary
@@ -152,30 +280,23 @@ const StoneMarket = () => {
             <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted-foreground">
               The Verdict Stone is a living reputation relic. Its level ratchets up with the deeds of whoever
               holds it and never falls, so a stone carries its rank to its next owner. Forge one by proving
-              yourself in the arena, then let it roam across chains.
+              yourself in the arena, list it, or buy your way up.
             </p>
           </motion.div>
 
-          {/* Stats */}
           <div className="mt-10 grid grid-cols-2 gap-4 md:grid-cols-3">
             <StatPill label="Stones Forged" value={configured ? String(stones.length) : "—"} />
             <StatPill label="Highest Level" value={highest ? String(highest) : "—"} accent="hsl(45 93% 58%)" />
-            <StatPill
-              label="Your Perk Level"
-              value={walletAddress ? String(vault?.effectiveLevel ?? 0) : "—"}
-              accent="hsl(142 71% 45%)"
-            />
+            <StatPill label="Your Perk Level" value={walletAddress ? String(vault?.effectiveLevel ?? 0) : "—"} accent="hsl(142 71% 45%)" />
           </div>
 
           {!configured && (
             <div className="mt-12 rounded-2xl border border-border/70 bg-card/60 p-8 text-center text-muted-foreground">
               The stone hub address is not configured for this build. Set
-              <span className="mx-1 font-mono text-foreground">VITE_STONE_HUB_ADDRESS</span>
-              to bring the market online.
+              <span className="mx-1 font-mono text-foreground">VITE_STONE_HUB_ADDRESS</span> to bring the market online.
             </div>
           )}
 
-          {/* Your vault */}
           {configured && (
             <section className="mt-14">
               <div className="flex items-center gap-3">
@@ -184,25 +305,19 @@ const StoneMarket = () => {
               </div>
               {!walletAddress ? (
                 <div className="mt-5 flex flex-col items-start gap-4 rounded-2xl border border-border/70 bg-card/60 p-8 md:flex-row md:items-center md:justify-between">
-                  <p className="text-muted-foreground">Connect a wallet to see the stones you hold and your perk level.</p>
+                  <p className="text-muted-foreground">Connect a wallet to see the stones you hold, list them, and read your perk level.</p>
                   <Button variant="wallet" onClick={openWalletModal}>Connect Wallet</Button>
                 </div>
               ) : (vault?.stones.length ?? 0) === 0 ? (
                 <div className="mt-5 rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-muted-foreground">
-                  No stones bound to this wallet yet. Climb the arena to clear the mint gate, then forge your first
-                  stone below.
+                  No stones bound to this wallet yet. Climb the arena to clear the mint gate, or buy one below.
                 </div>
               ) : (
-                <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                  {vault!.stones.map((s, i) => (
-                    <StoneCard key={s.tokenId} stone={s} you index={i} />
-                  ))}
-                </div>
+                <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">{vault!.stones.map(renderCard)}</div>
               )}
             </section>
           )}
 
-          {/* The collection */}
           {configured && (
             <section className="mt-16">
               <div className="flex items-center justify-between">
@@ -219,33 +334,16 @@ const StoneMarket = () => {
                   No stones have been forged yet. The first one is waiting to be claimed.
                 </div>
               ) : (
-                <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                  {stones.map((s, i) => (
-                    <StoneCard key={s.tokenId} stone={s} you={s.owner.toLowerCase() === walletAddress?.toLowerCase()} index={i} />
-                  ))}
-                </div>
+                <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">{stones.map(renderCard)}</div>
               )}
             </section>
           )}
 
-          {/* Acquire */}
           <section className="mt-16 grid gap-5 md:grid-cols-3">
             {[
-              {
-                icon: Trophy,
-                title: "Earn your rank",
-                body: "Win debates and riddles in the arena. Your account level rises with every verdict in your favor.",
-              },
-              {
-                icon: Sparkles,
-                title: "Clear the mint gate",
-                body: "Each stone you forge raises the bar for the next. Reach the gate and forge a stone bound to your profile.",
-              },
-              {
-                icon: ArrowUpRight,
-                title: "Hold, level, trade",
-                body: "Perks follow the highest stone you hold. Levels ratchet up and never drop, so a stone keeps its rank when it changes hands.",
-              },
+              { icon: Trophy, title: "Earn your rank", body: "Win debates and riddles in the arena. Your account level rises with every verdict in your favor." },
+              { icon: Sparkles, title: "Clear the mint gate", body: "Each stone you forge raises the bar for the next. Reach the gate and forge a stone bound to your profile." },
+              { icon: ArrowUpRight, title: "Hold, level, trade", body: "Perks follow the highest stone you hold. Levels ratchet up and never drop, so a stone keeps its rank when it sells." },
             ].map(({ icon: Icon, title, body }) => (
               <div key={title} className="rounded-2xl border border-border/70 bg-card/50 p-6">
                 <Icon className="h-6 w-6 text-primary" />
@@ -257,13 +355,10 @@ const StoneMarket = () => {
 
           <div className="mt-12 flex flex-wrap items-center gap-4">
             <Link to="/lobby">
-              <Button variant="default" className="font-heading uppercase tracking-[0.18em]">
-                Enter the Arena
-              </Button>
+              <Button variant="default" className="font-heading uppercase tracking-[0.18em]">Enter the Arena</Button>
             </Link>
             <p className="text-xs text-muted-foreground">
-              Secondary trading and offers arrive with the market contract. For now stones are forged by merit and
-              transfer with standard wallets.
+              Trades settle in ETH on Base Sepolia; a sale transfers the stone and its rank to the buyer.
             </p>
           </div>
         </div>
