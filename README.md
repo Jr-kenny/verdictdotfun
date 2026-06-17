@@ -17,11 +17,11 @@ StudioNet, rebuilt engine with the generic mode registry + credit-wager wiring (
 - Core (`verdictdotfun`): [0x2490fb764c6e1f9Fb1937c186A57B1BBb2062b53](https://studio.genlayer.com/contracts?import-contract=0x2490fb764c6e1f9Fb1937c186A57B1BBb2062b53)
 - Mode (`argue`): [0xace8CFCd2A0a42BFB46FD5Fdf0d87c306d2E76Eb](https://studio.genlayer.com/contracts?import-contract=0xace8CFCd2A0a42BFB46FD5Fdf0d87c306d2E76Eb)
 - Mode (`riddle`): [0xf5FddBAECd66C934a0Db1a337fFAE2a9bd9f23B6](https://studio.genlayer.com/contracts?import-contract=0xf5FddBAECd66C934a0Db1a337fFAE2a9bd9f23B6)
-- Mode (`bluff`): pending deploy (needs funded keys) — set `VITE_VERDICTDOTFUN_BLUFF_CONTRACT_ADDRESS` after deploying
-- Mode (`prompt_duel`): pending deploy (needs funded keys) — set `VITE_VERDICTDOTFUN_PROMPT_DUEL_CONTRACT_ADDRESS` after deploying
-- Mode (`sketch`): pending deploy (needs funded keys) — set `VITE_VERDICTDOTFUN_SKETCH_CONTRACT_ADDRESS` after deploying
-- Mode (`persuade`): pending deploy (needs funded keys) — set `VITE_VERDICTDOTFUN_PERSUADE_CONTRACT_ADDRESS` after deploying
-- Mode (`oracle`): pending deploy (needs funded keys) — set `VITE_VERDICTDOTFUN_ORACLE_CONTRACT_ADDRESS` after deploying
+- Mode (`bluff`): [0xd1B89325B4dc02355Cb106d3830162F99768a076](https://studio.genlayer.com/contracts?import-contract=0xd1B89325B4dc02355Cb106d3830162F99768a076)
+- Mode (`prompt_duel`): [0x4958Aa2C6C1ACEE81342Fd4E0BA5F18beF8070Ec](https://studio.genlayer.com/contracts?import-contract=0x4958Aa2C6C1ACEE81342Fd4E0BA5F18beF8070Ec)
+- Mode (`sketch`): [0x32A720ae1C02319989306b037Ebce252Ec78BD7C](https://studio.genlayer.com/contracts?import-contract=0x32A720ae1C02319989306b037Ebce252Ec78BD7C)
+- Mode (`persuade`): [0x25789e3d6f078a60Db5e520D1756d569D2721cE9](https://studio.genlayer.com/contracts?import-contract=0x25789e3d6f078a60Db5e520D1756d569D2721cE9)
+- Mode (`oracle`): [0x827059e0866c465d8D79E7f624988CC7A9D651e4](https://studio.genlayer.com/contracts?import-contract=0x827059e0866c465d8D79E7f624988CC7A9D651e4)
 - Credit rail: CreditLedger `0xeb70F3bbC2706c9cC2A83BEf27B2D07fa1b07De5` (GenLayer) ↔ CreditVault `0x604bb7eb4dBCD4D1bd2A11166367284a5aFD1a9a` (Base Sepolia)
 - Verdict Stone (NFT): hub `0x6D612207Eea47Ccbd2Bab0D99bAaa54fFb189609` (Base Sepolia), GenLayer IC `0x0F603A6BBf535F173804491141fd2b67e8C2C94E`
 

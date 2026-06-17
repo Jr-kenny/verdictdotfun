@@ -438,9 +438,43 @@ async function deployFullStack() {
   };
 }
 
-if (deployTarget !== "all") {
-  throw new Error('The fixed-contract deployment uses DEPLOY_TARGET="all" only.');
+// Deploy only the new game modes against an already-deployed core, registering each on it.
+// Avoids redeploying core (which would change its address and force the multi-place migration
+// + credit-bridge redeploy). Run with DEPLOY_TARGET="new-modes" EXISTING_CORE_ADDRESS=0x...
+async function deployNewModes(coreAddress) {
+  const newModes = ["bluff", "prompt_duel", "sketch", "persuade", "oracle"];
+  const addresses = {};
+  for (const mode of newModes) {
+    addresses[mode] = await deployContract(contractPaths[mode], [coreAddress]);
+    await writeContractWithForcedGas(coreAddress, "set_mode_contract", [mode, addresses[mode]], {
+      gas: 2_000_000n,
+      status: TransactionStatus.FINALIZED,
+    });
+    console.log(`[deploy] registered ${mode} -> ${addresses[mode]}`);
+  }
+
+  const ledger = process.env.CREDIT_LEDGER_CONTRACT_ADDRESS;
+  if (ledger) {
+    for (const mode of newModes) {
+      await writeContract(addresses[mode], "set_credit_ledger", [ledger]);
+      await writeContract(ledger, "approve_caller", [addresses[mode], true]);
+    }
+    console.log(`[deploy] wired credit ledger ${ledger} to the new modes`);
+  }
+
+  return { ...addresses, verdictdotfun: coreAddress, creditLedger: ledger ?? null };
 }
 
-const result = await deployFullStack();
+let result;
+if (deployTarget === "all") {
+  result = await deployFullStack();
+} else if (deployTarget === "new-modes") {
+  const existingCore = process.env.EXISTING_CORE_ADDRESS;
+  if (!existingCore) {
+    throw new Error('DEPLOY_TARGET="new-modes" requires EXISTING_CORE_ADDRESS to be set.');
+  }
+  result = await deployNewModes(existingCore);
+} else {
+  throw new Error('Set DEPLOY_TARGET to "all" or "new-modes".');
+}
 console.log(JSON.stringify(result, null, 2));

@@ -8,16 +8,16 @@
     "verdictdotfun": { "role": "core / mode registry", "address": "0x2490fb764c6e1f9Fb1937c186A57B1BBb2062b53" },
     "argue": { "role": "game mode", "address": "0xace8CFCd2A0a42BFB46FD5Fdf0d87c306d2E76Eb" },
     "riddle": { "role": "game mode", "address": "0xf5FddBAECd66C934a0Db1a337fFAE2a9bd9f23B6" },
-    "bluff": { "role": "game mode", "address": "" },
-    "prompt_duel": { "role": "game mode", "address": "" },
-    "sketch": { "role": "game mode", "address": "" },
-    "persuade": { "role": "game mode", "address": "" },
-    "oracle": { "role": "game mode", "address": "" }
+    "bluff": { "role": "game mode", "address": "0xd1B89325B4dc02355Cb106d3830162F99768a076" },
+    "prompt_duel": { "role": "game mode", "address": "0x4958Aa2C6C1ACEE81342Fd4E0BA5F18beF8070Ec" },
+    "sketch": { "role": "game mode", "address": "0x32A720ae1C02319989306b037Ebce252Ec78BD7C" },
+    "persuade": { "role": "game mode", "address": "0x25789e3d6f078a60Db5e520D1756d569D2721cE9" },
+    "oracle": { "role": "game mode", "address": "0x827059e0866c465d8D79E7f624988CC7A9D651e4" }
   },
   "creditWager": {
     "ledger": "0xeb70F3bbC2706c9cC2A83BEf27B2D07fa1b07De5",
     "vault": "0x604bb7eb4dBCD4D1bd2A11166367284a5aFD1a9a",
-    "wired": "core + argue + riddle point at the ledger; modes are approved escrow callers; ledger.core = the core above. bluff, prompt_duel, sketch, persuade, and oracle will be wired the same way once deployed."
+    "wired": "core + all 7 modes point at the ledger; modes are approved escrow callers; ledger.core = the core above. The 5 new modes were deployed against the existing core on 2026-06-17 (no core redeploy)."
   },
   "supersedes": "2026-06-17 stack core 0x9F4Cb5A8... (no bonus XP), and earlier 0x2d53d797..."
 }
