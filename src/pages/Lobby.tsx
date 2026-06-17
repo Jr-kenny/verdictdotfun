@@ -10,6 +10,8 @@ import { ARGUE_STYLES } from "@/lib/gameModes";
 import { fetchStoredLocalProfileName, getLocalProfileQueryKey } from "@/lib/localProfile";
 import { fetchArenaProfile } from "@/lib/profileFactory";
 import { createRoom, fetchAllRooms, fetchRoom, isEmptyAddress, registerLocalProfile, shouldUseLocalProfileAlias, waitForRoom } from "@/lib/verdictArena";
+import { arenaEnv } from "@/lib/env";
+import { fetchCreditBalance, formatCredits } from "@/lib/creditRail";
 import type { ArenaMode, ArgueStyle } from "@/types/arena";
 import { Puzzle, Radio, Swords } from "lucide-react";
 import { toast } from "sonner";
@@ -33,12 +35,20 @@ const Lobby = () => {
   const [joinCode, setJoinCode] = useState("");
   const [showJoinInput, setShowJoinInput] = useState(false);
   const [category, setCategory] = useState("Tech");
+  const [wager, setWager] = useState("");
 
   const profileQuery = useQuery({
     queryKey: ["profile", walletAddress],
     queryFn: () => fetchArenaProfile(walletAddress!),
     enabled: Boolean(walletAddress),
   });
+  const creditBalanceQuery = useQuery({
+    queryKey: ["credit-balance", profileQuery.data?.profileAddress],
+    queryFn: () => fetchCreditBalance(profileQuery.data!.profileAddress),
+    enabled: arenaEnv.hasCreditRail && Boolean(profileQuery.data?.profileAddress),
+    refetchInterval: 20_000,
+  });
+  const creditBalance = creditBalanceQuery.data ?? 0;
   const localProfileQuery = useQuery({
     queryKey: getLocalProfileQueryKey(walletAddress),
     queryFn: () => fetchStoredLocalProfileName(walletAddress),
@@ -104,11 +114,16 @@ const Lobby = () => {
         await registerLocalProfile(selectedMode, walletAddress, provider, activeProfileName);
       }
 
+      const stakeCredits = Math.floor(Number(wager) || 0);
+      if (stakeCredits > 0 && stakeCredits > creditBalance) {
+        throw new Error(`You only have ${creditBalance} credits. Buy more or lower the wager.`);
+      }
       await createRoom(selectedMode, walletAddress, provider, {
         roomId,
         category: category.trim(),
         argueStyle,
         profileAddress: profileQuery.data?.profileAddress ?? null,
+        stake: stakeCredits > 0 ? BigInt(stakeCredits) * 10n ** 18n : 0n,
       });
       await waitForRoom(selectedMode, roomId, 60, 2_500);
       return { roomId, mode: selectedMode };
@@ -363,6 +378,30 @@ const Lobby = () => {
                       ))}
                     </div>
                   </div>
+
+                  {arenaEnv.hasCreditRail && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-heading uppercase tracking-[0.18em] text-muted-foreground">Wager</p>
+                        <Link to="/credits" className="text-xs text-primary hover:underline">
+                          balance {formatCredits(creditBalance)} credits →
+                        </Link>
+                      </div>
+                      <Input
+                        value={wager}
+                        onChange={(event) => setWager(event.target.value.replace(/[^0-9]/g, ""))}
+                        inputMode="numeric"
+                        placeholder="0 = free room"
+                        className="bg-background/60"
+                      />
+                      {Number(wager) > 0 && (
+                        <p className="text-[11px] text-muted-foreground">
+                          Both players stake {formatCredits(Number(wager))} credits; the winner takes{" "}
+                          {formatCredits(Number(wager) * 2)}.
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                     <Button
