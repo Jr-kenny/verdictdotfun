@@ -49,7 +49,7 @@ class VerdictDotFunCore:
         def get_profile_by_address(self, profile: Address, /) -> TreeMap[str, typing.Any]: ...
 
     class Write:
-        def apply_match_result(self, profile: Address, match_id: str, did_win: bool, mode: str, /) -> None: ...
+        def apply_match_result(self, profile: Address, match_id: str, did_win: bool, mode: str, bonus_xp: u16 = u16(0), /) -> None: ...
 
 
 @allow_storage
@@ -316,7 +316,7 @@ class RiddleGame(gl.Contract):
         if room.winner == ZERO_ADDRESS or loser == ZERO_ADDRESS:
             raise Exception("Resolved room does not have a complete winner/loser pair.")
 
-        self._emit_profile_result(room.id, room.winner, loser)
+        self._emit_profile_result(room.id, room.winner, loser, self._wager_bonus_xp(room))
 
     @gl.public.write
     def upgrade(self, new_code: bytes):
@@ -792,7 +792,11 @@ Rules:
         loser = self._resolved_loser(room)
         if self.credit_ledger != ZERO_ADDRESS and int(room.stake) > 0:
             CreditLedgerIface(self.credit_ledger).emit(on="accepted").finalize_winner(room.id, room.winner)
-        self._emit_profile_result(room.id, room.winner, loser)
+        self._emit_profile_result(room.id, room.winner, loser, self._wager_bonus_xp(room))
+
+    def _wager_bonus_xp(self, room: RiddleRoom) -> int:
+        # Wagered wins are worth more: +1 XP per credit staked, capped (base win XP is 100).
+        return min(int(room.stake) // (10 ** 18), 200)
 
     def _settle_void(self, room: RiddleRoom):
         if self.credit_ledger != ZERO_ADDRESS and int(room.stake) > 0:
@@ -860,7 +864,7 @@ Return JSON: {{"decision": "upheld" | "overturned", "reasoning": "<one or two se
             reasoning = "No reasoning provided."
         return {"decision": raw, "reasoning": reasoning}
 
-    def _emit_profile_result(self, room_id: str, winner: Address, loser: Address):
+    def _emit_profile_result(self, room_id: str, winner: Address, loser: Address, bonus_xp: int = 0):
 
         if self.core_contract == ZERO_ADDRESS:
             return
@@ -871,8 +875,8 @@ Return JSON: {{"decision": "upheld" | "overturned", "reasoning": "<one or two se
 
         match_id = self._match_id(room_id)
         core = self._core()
-        core.emit(on="accepted").apply_match_result(winner, match_id, True, MODE)
-        core.emit(on="accepted").apply_match_result(loser, match_id, False, MODE)
+        core.emit(on="accepted").apply_match_result(winner, match_id, True, MODE, u16(int(bonus_xp)))
+        core.emit(on="accepted").apply_match_result(loser, match_id, False, MODE, u16(0))
 
     def _resolved_loser(self, room: RiddleRoom) -> Address:
         if room.winner == room.owner:

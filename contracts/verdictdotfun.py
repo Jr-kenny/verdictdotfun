@@ -127,7 +127,7 @@ class VerdictDotFun(gl.Contract):
         self.profiles[normalized_profile] = profile
 
     @gl.public.write
-    def apply_match_result(self, profile_address: Address, match_id: str, did_win: bool, mode: str):
+    def apply_match_result(self, profile_address: Address, match_id: str, did_win: bool, mode: str, bonus_xp: u16 = u16(0)):
         del mode
         if not self.approved_games.get(gl.message.sender_address, False):
             raise Exception("Only approved game contracts can apply match results.")
@@ -146,10 +146,11 @@ class VerdictDotFun(gl.Contract):
         self._sync_profile_season_if_needed(profile)
 
         if did_win:
+            win_xp = WIN_XP + int(bonus_xp)  # wagered wins earn a stake-scaled bonus
             profile.wins += u32(1)
             profile.lifetime_wins += u32(1)
-            profile.season_total_xp += u32(WIN_XP)
-            self._apply_xp_delta(profile, WIN_XP)
+            profile.season_total_xp += u32(win_xp)
+            self._apply_xp_delta(profile, win_xp)
         else:
             profile.losses += u32(1)
             profile.lifetime_losses += u32(1)
