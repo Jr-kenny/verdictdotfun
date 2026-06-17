@@ -48,3 +48,23 @@ def test_bluff_start_generates_claim(direct_vm, direct_deploy, direct_alice, dir
     room = contract.get_room("ROOM01")
     assert room.status == "active"
     assert "Dial-up" in room.claim
+
+
+def test_bluff_submit_requires_start_and_stores(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy("contracts/bluff_game.py", ZERO_ADDRESS)
+    direct_vm.mock_llm(r"(?s).*Generate one hard-to-defend claim.*",
+                       {"claim": "Pineapple belongs on pizza and improves digestion measurably."})
+    direct_vm.sender = direct_alice
+    contract.register_profile("Alice")
+    contract.create_room("ROOM01", "Food", ZERO_ADDRESS, 0)
+    direct_vm.sender = direct_bob
+    contract.register_profile("Bob")
+    contract.join_room("ROOM01")
+
+    direct_vm.sender = direct_alice
+    contract.start_room("ROOM01")
+    contract.submit_entry("ROOM01", "Pineapple's bromelain genuinely aids digestion, and the sweet-savory contrast is the point of the dish.")
+
+    room = contract.get_room("ROOM01")
+    assert room.owner_submission != ""
+    assert room.status == "active"

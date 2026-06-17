@@ -170,6 +170,38 @@ class BluffGame(gl.Contract):
         self._open_escrow_if_staked(room)
 
     @gl.public.write
+    def submit_entry(self, room_id: str, submission: str):
+        room = self._require_room(room_id)
+        text = submission.strip()
+
+        if room.status == "resolved":
+            raise gl.vm.UserError("[EXPECTED] Resolved rooms cannot be edited.")
+        if room.opponent == ZERO_ADDRESS:
+            raise gl.vm.UserError("[EXPECTED] A bluff room needs two players.")
+        if not room.claim or room.status == "ready_to_start":
+            raise gl.vm.UserError("[EXPECTED] Start the room before submitting.")
+        if room.status != "active":
+            raise gl.vm.UserError("[EXPECTED] This bluff room is not accepting submissions.")
+        if len(text) < 40:
+            raise gl.vm.UserError("[EXPECTED] Arguments must be at least 40 characters.")
+
+        role = self._participant_role(room)
+        if role == "owner":
+            if room.owner_submission:
+                raise gl.vm.UserError("[EXPECTED] You already submitted your argument.")
+            room.owner_submission = text
+        else:
+            if room.opponent_submission:
+                raise gl.vm.UserError("[EXPECTED] You already submitted your argument.")
+            room.opponent_submission = text
+
+        if room.owner_submission and room.opponent_submission:
+            self._finalize_room(room)
+            return
+
+        self.rooms[room.id] = room
+
+    @gl.public.write
     def start_room(self, room_id: str):
         room = self._require_room(room_id)
         if room.status == "resolved":
