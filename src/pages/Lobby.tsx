@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useArena } from "@/context/ArenaContext";
 import Header from "@/components/Header";
 import { ARGUE_STYLES } from "@/lib/gameModes";
@@ -36,6 +37,8 @@ const Lobby = () => {
   const [showJoinInput, setShowJoinInput] = useState(false);
   const [category, setCategory] = useState("Tech");
   const [wager, setWager] = useState("");
+  const [wagerDialogOpen, setWagerDialogOpen] = useState(false);
+  const [wagerMode, setWagerMode] = useState<"free" | "wager">("free");
 
   const profileQuery = useQuery({
     queryKey: ["profile", walletAddress],
@@ -129,6 +132,7 @@ const Lobby = () => {
       return { roomId, mode: selectedMode };
     },
     onSuccess: async ({ roomId, mode }) => {
+      setWagerDialogOpen(false);
       await queryClient.invalidateQueries({ queryKey: ["rooms"] });
       navigate(`/room/${mode}/${roomId}`);
     },
@@ -140,7 +144,7 @@ const Lobby = () => {
   if (!walletReady) {
     return (
       <div className="min-h-screen grid-bg">
-        <Header centered />
+        <Header />
         <main className="mx-auto flex min-h-screen max-w-4xl items-center justify-center px-4 pt-24">
           <div className="rounded-xl border border-border bg-card/70 px-6 py-5 text-sm text-muted-foreground">
             Restoring wallet session...
@@ -200,7 +204,7 @@ const Lobby = () => {
 
   return (
     <div className="min-h-screen grid-bg noise-bg relative">
-      <Header centered />
+      <Header />
       <div
         className="pointer-events-none absolute inset-x-0 top-0 h-72 opacity-60"
         style={{ background: "radial-gradient(ellipse at 50% -10%, hsl(1 77% 55% / 0.16), transparent 60%)" }}
@@ -379,40 +383,100 @@ const Lobby = () => {
                     </div>
                   </div>
 
-                  {arenaEnv.hasCreditRail && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs font-heading uppercase tracking-[0.18em] text-muted-foreground">Wager</p>
-                        <Link to="/credits" className="text-xs text-primary hover:underline">
-                          balance {formatCredits(creditBalance)} credits →
-                        </Link>
-                      </div>
-                      <Input
-                        value={wager}
-                        onChange={(event) => setWager(event.target.value.replace(/[^0-9]/g, ""))}
-                        inputMode="numeric"
-                        placeholder="0 = free room"
-                        className="bg-background/60"
-                      />
-                      {Number(wager) > 0 && (
-                        <p className="text-[11px] text-muted-foreground">
-                          Both players stake {formatCredits(Number(wager))} credits; the winner takes{" "}
-                          {formatCredits(Number(wager) * 2)}.
-                        </p>
-                      )}
-                    </div>
-                  )}
-
                   <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                     <Button
                       variant="arena"
                       className="w-full py-5"
-                      onClick={handleCreateRoom}
-                      disabled={createRoomMutation.isPending || !category.trim()}
+                      onClick={() => {
+                        setWagerMode("free");
+                        setWager("");
+                        setWagerDialogOpen(true);
+                      }}
+                      disabled={!category.trim()}
                     >
-                      {createRoomMutation.isPending ? "Creating..." : "Create Room"}
+                      Create Room
                     </Button>
                   </motion.div>
+
+                  <Dialog open={wagerDialogOpen} onOpenChange={setWagerDialogOpen}>
+                    <DialogContent className="border-border/70 bg-card">
+                      <DialogHeader>
+                        <DialogTitle className="font-heading uppercase tracking-[0.12em]">
+                          Open a {selectedMode === "argue" ? "Argue" : "Riddle"} room
+                        </DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setWagerMode("free");
+                              setWager("");
+                            }}
+                            className={`rounded-xl border p-4 text-left transition ${
+                              wagerMode === "free" ? "border-primary/60 bg-primary/10" : "border-border/70 hover:border-primary/40"
+                            }`}
+                          >
+                            <p className="font-heading font-bold">Free room</p>
+                            <p className="mt-1 text-xs text-muted-foreground">Play for rank and XP only.</p>
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!arenaEnv.hasCreditRail}
+                            onClick={() => setWagerMode("wager")}
+                            className={`rounded-xl border p-4 text-left transition disabled:opacity-40 ${
+                              wagerMode === "wager" ? "border-primary/60 bg-primary/10" : "border-border/70 hover:border-primary/40"
+                            }`}
+                          >
+                            <p className="font-heading font-bold">Wager credits</p>
+                            <p className="mt-1 text-xs text-muted-foreground">Both stake; winner takes the pot.</p>
+                          </button>
+                        </div>
+
+                        {wagerMode === "wager" && (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-muted-foreground">Credits per player</span>
+                              <Link to="/credits" className="text-primary hover:underline">
+                                balance {formatCredits(creditBalance)} →
+                              </Link>
+                            </div>
+                            <Input
+                              value={wager}
+                              onChange={(event) => setWager(event.target.value.replace(/[^0-9]/g, ""))}
+                              inputMode="numeric"
+                              placeholder="e.g. 100"
+                              className="bg-background/60"
+                              autoFocus
+                            />
+                            {Number(wager) > 0 && (
+                              <p className="text-[11px] text-muted-foreground">
+                                Both players stake {formatCredits(Number(wager))} credits; the winner takes{" "}
+                                {formatCredits(Number(wager) * 2)}.
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        <Button
+                          variant="arena"
+                          className="w-full"
+                          onClick={handleCreateRoom}
+                          disabled={
+                            createRoomMutation.isPending ||
+                            !category.trim() ||
+                            (wagerMode === "wager" && (!wager || Number(wager) <= 0))
+                          }
+                        >
+                          {createRoomMutation.isPending
+                            ? "Creating..."
+                            : wagerMode === "free"
+                              ? "Create free room"
+                              : `Create wagered room · ${formatCredits(Number(wager) || 0)}`}
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
 
                   <AnimatePresence mode="wait">
                     {showJoinInput ? (
@@ -467,6 +531,11 @@ const Lobby = () => {
                               {room.mode === "argue" ? (
                                 <span className="text-xs uppercase tracking-wide text-primary/80">[{room.argueStyle === "convince" ? "Convince" : "Debate"}]</span>
                               ) : null}{" "}
+                              {room.stakeCredits > 0 && (
+                                <span className="mr-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                                  Wager {formatCredits(room.stakeCredits)}
+                                </span>
+                              )}
                               {room.prompt || (room.mode === "argue" ? "Prompt pending until the room starts." : "Riddle loading...")}
                               <span className="text-muted-foreground ml-2 text-xs">{room.id}</span>
                             </Link>
