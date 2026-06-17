@@ -1,4 +1,4 @@
-export type ArenaMode = "argue" | "riddle";
+export type ArenaMode = "argue" | "riddle" | "bluff" | "prompt_duel" | "sketch" | "persuade" | "oracle";
 export type ArgueStyle = "debate" | "convince";
 
 export type ArenaRoomStatus =
@@ -7,6 +7,8 @@ export type ArenaRoomStatus =
   | "ready_to_start"
   | "studying"
   | "active"
+  | "drawing"
+  | "guessing"
   | "provisional"
   | "void"
   | "resolved";
@@ -71,4 +73,21 @@ export interface ArenaRoom {
   revealedAnswer?: string;
   ownerAttemptsUsed?: number;
   opponentAttemptsUsed?: number;
+  // sketch
+  ownerDrawing?: string;
+  opponentDrawing?: string;
+  // persuade
+  persona?: string;
+  ownerTranscript?: string;
+  opponentTranscript?: string;
+  ownerMeter?: number;
+  opponentMeter?: number;
+  ownerTurns?: number;
+  opponentTurns?: number;
+  ownerDone?: boolean;
+  opponentDone?: boolean;
+  // oracle
+  question?: string;
+  source?: string;
+  outcome?: string;
 }

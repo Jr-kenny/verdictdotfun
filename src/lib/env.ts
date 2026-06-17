@@ -29,6 +29,19 @@ const contractAddresses: Record<ArenaMode, string | null> = {
     cleanValue(import.meta.env.VITE_VERDICTDOTFUN_RIDDLE_CONTRACT_ADDRESS) ??
     cleanValue(import.meta.env.VITE_VDT_RIDDLE_CONTRACT_ADDRESS) ??
     cleanValue(import.meta.env.VITE_RIDDLE_CONTRACT_ADDRESS),
+  bluff: cleanValue(import.meta.env.VITE_VERDICTDOTFUN_BLUFF_CONTRACT_ADDRESS) ?? cleanValue(import.meta.env.VITE_BLUFF_CONTRACT_ADDRESS),
+  prompt_duel:
+    cleanValue(import.meta.env.VITE_VERDICTDOTFUN_PROMPT_DUEL_CONTRACT_ADDRESS) ??
+    cleanValue(import.meta.env.VITE_PROMPT_DUEL_CONTRACT_ADDRESS),
+  sketch:
+    cleanValue(import.meta.env.VITE_VERDICTDOTFUN_SKETCH_CONTRACT_ADDRESS) ??
+    cleanValue(import.meta.env.VITE_SKETCH_CONTRACT_ADDRESS),
+  persuade:
+    cleanValue(import.meta.env.VITE_VERDICTDOTFUN_PERSUADE_CONTRACT_ADDRESS) ??
+    cleanValue(import.meta.env.VITE_PERSUADE_CONTRACT_ADDRESS),
+  oracle:
+    cleanValue(import.meta.env.VITE_VERDICTDOTFUN_ORACLE_CONTRACT_ADDRESS) ??
+    cleanValue(import.meta.env.VITE_ORACLE_CONTRACT_ADDRESS),
 };
 
 const configuredModes = (Object.entries(contractAddresses) as [ArenaMode, string | null][])

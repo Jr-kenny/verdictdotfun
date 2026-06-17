@@ -60,6 +60,36 @@ function buildInitialGameContracts(): Record<ArenaMode, GameContractState> {
       error: arenaEnv.contractAddresses.riddle ? null : "Set VITE_VERDICTDOTFUN_RIDDLE_CONTRACT_ADDRESS after deployment.",
       schema: null,
     },
+    bluff: {
+      address: arenaEnv.contractAddresses.bluff,
+      status: arenaEnv.contractAddresses.bluff ? "checking" : "missing-config",
+      error: arenaEnv.contractAddresses.bluff ? null : "Set VITE_VERDICTDOTFUN_BLUFF_CONTRACT_ADDRESS after deployment.",
+      schema: null,
+    },
+    prompt_duel: {
+      address: arenaEnv.contractAddresses.prompt_duel,
+      status: arenaEnv.contractAddresses.prompt_duel ? "checking" : "missing-config",
+      error: arenaEnv.contractAddresses.prompt_duel ? null : "Set VITE_VERDICTDOTFUN_PROMPT_DUEL_CONTRACT_ADDRESS after deployment.",
+      schema: null,
+    },
+    sketch: {
+      address: arenaEnv.contractAddresses.sketch,
+      status: arenaEnv.contractAddresses.sketch ? "checking" : "missing-config",
+      error: arenaEnv.contractAddresses.sketch ? null : "Set VITE_VERDICTDOTFUN_SKETCH_CONTRACT_ADDRESS after deployment.",
+      schema: null,
+    },
+    persuade: {
+      address: arenaEnv.contractAddresses.persuade,
+      status: arenaEnv.contractAddresses.persuade ? "checking" : "missing-config",
+      error: arenaEnv.contractAddresses.persuade ? null : "Set VITE_VERDICTDOTFUN_PERSUADE_CONTRACT_ADDRESS after deployment.",
+      schema: null,
+    },
+    oracle: {
+      address: arenaEnv.contractAddresses.oracle,
+      status: arenaEnv.contractAddresses.oracle ? "checking" : "missing-config",
+      error: arenaEnv.contractAddresses.oracle ? null : "Set VITE_VERDICTDOTFUN_ORACLE_CONTRACT_ADDRESS after deployment.",
+      schema: null,
+    },
   };
 }
 

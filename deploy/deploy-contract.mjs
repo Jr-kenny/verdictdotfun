@@ -36,6 +36,11 @@ const contractPaths = {
   verdictdotfun: resolve(process.cwd(), "contracts", "verdictdotfun.py"),
   argue: resolve(process.cwd(), "contracts", "argue_game.py"),
   riddle: resolve(process.cwd(), "contracts", "riddle_game.py"),
+  bluff: resolve(process.cwd(), "contracts", "bluff_game.py"),
+  prompt_duel: resolve(process.cwd(), "contracts", "prompt_duel_game.py"),
+  sketch: resolve(process.cwd(), "contracts", "sketch_game.py"),
+  persuade: resolve(process.cwd(), "contracts", "persuade_game.py"),
+  oracle: resolve(process.cwd(), "contracts", "oracle_game.py"),
 };
 
 const IN_PROGRESS_STATUSES = new Set([
@@ -362,12 +367,37 @@ async function deployFullStack() {
   const coreAddress = await deployContract(contractPaths.verdictdotfun, [initialSeason]);
   const argueAddress = await deployContract(contractPaths.argue, [coreAddress]);
   const riddleAddress = await deployContract(contractPaths.riddle, [coreAddress]);
+  const bluffAddress = await deployContract(contractPaths.bluff, [coreAddress]);
+  const promptDuelAddress = await deployContract(contractPaths.prompt_duel, [coreAddress]);
+  const sketchAddress = await deployContract(contractPaths.sketch, [coreAddress]);
+  const persuadeAddress = await deployContract(contractPaths.persuade, [coreAddress]);
+  const oracleAddress = await deployContract(contractPaths.oracle, [coreAddress]);
 
   await writeContractWithForcedGas(coreAddress, "set_mode_contract", ["argue", argueAddress], {
     gas: 2_000_000n,
     status: TransactionStatus.FINALIZED,
   });
   await writeContractWithForcedGas(coreAddress, "set_mode_contract", ["riddle", riddleAddress], {
+    gas: 2_000_000n,
+    status: TransactionStatus.FINALIZED,
+  });
+  await writeContractWithForcedGas(coreAddress, "set_mode_contract", ["bluff", bluffAddress], {
+    gas: 2_000_000n,
+    status: TransactionStatus.FINALIZED,
+  });
+  await writeContractWithForcedGas(coreAddress, "set_mode_contract", ["prompt_duel", promptDuelAddress], {
+    gas: 2_000_000n,
+    status: TransactionStatus.FINALIZED,
+  });
+  await writeContractWithForcedGas(coreAddress, "set_mode_contract", ["sketch", sketchAddress], {
+    gas: 2_000_000n,
+    status: TransactionStatus.FINALIZED,
+  });
+  await writeContractWithForcedGas(coreAddress, "set_mode_contract", ["persuade", persuadeAddress], {
+    gas: 2_000_000n,
+    status: TransactionStatus.FINALIZED,
+  });
+  await writeContractWithForcedGas(coreAddress, "set_mode_contract", ["oracle", oracleAddress], {
     gas: 2_000_000n,
     status: TransactionStatus.FINALIZED,
   });
@@ -379,9 +409,19 @@ async function deployFullStack() {
     await writeContract(coreAddress, "set_credit_ledger", [ledger]);
     await writeContract(argueAddress, "set_credit_ledger", [ledger]);
     await writeContract(riddleAddress, "set_credit_ledger", [ledger]);
+    await writeContract(bluffAddress, "set_credit_ledger", [ledger]);
+    await writeContract(promptDuelAddress, "set_credit_ledger", [ledger]);
+    await writeContract(sketchAddress, "set_credit_ledger", [ledger]);
+    await writeContract(persuadeAddress, "set_credit_ledger", [ledger]);
+    await writeContract(oracleAddress, "set_credit_ledger", [ledger]);
     await writeContract(ledger, "set_core", [coreAddress]);
     await writeContract(ledger, "approve_caller", [argueAddress, true]);
     await writeContract(ledger, "approve_caller", [riddleAddress, true]);
+    await writeContract(ledger, "approve_caller", [bluffAddress, true]);
+    await writeContract(ledger, "approve_caller", [promptDuelAddress, true]);
+    await writeContract(ledger, "approve_caller", [sketchAddress, true]);
+    await writeContract(ledger, "approve_caller", [persuadeAddress, true]);
+    await writeContract(ledger, "approve_caller", [oracleAddress, true]);
     console.log(`[deploy] wired credit ledger ${ledger} to core + modes`);
   }
 
@@ -389,13 +429,52 @@ async function deployFullStack() {
     verdictdotfun: coreAddress,
     argue: argueAddress,
     riddle: riddleAddress,
+    bluff: bluffAddress,
+    prompt_duel: promptDuelAddress,
+    sketch: sketchAddress,
+    persuade: persuadeAddress,
+    oracle: oracleAddress,
     creditLedger: ledger ?? null,
   };
 }
 
-if (deployTarget !== "all") {
-  throw new Error('The fixed-contract deployment uses DEPLOY_TARGET="all" only.');
+// Deploy only the new game modes against an already-deployed core, registering each on it.
+// Avoids redeploying core (which would change its address and force the multi-place migration
+// + credit-bridge redeploy). Run with DEPLOY_TARGET="new-modes" EXISTING_CORE_ADDRESS=0x...
+async function deployNewModes(coreAddress) {
+  const newModes = ["bluff", "prompt_duel", "sketch", "persuade", "oracle"];
+  const addresses = {};
+  for (const mode of newModes) {
+    addresses[mode] = await deployContract(contractPaths[mode], [coreAddress]);
+    await writeContractWithForcedGas(coreAddress, "set_mode_contract", [mode, addresses[mode]], {
+      gas: 2_000_000n,
+      status: TransactionStatus.FINALIZED,
+    });
+    console.log(`[deploy] registered ${mode} -> ${addresses[mode]}`);
+  }
+
+  const ledger = process.env.CREDIT_LEDGER_CONTRACT_ADDRESS;
+  if (ledger) {
+    for (const mode of newModes) {
+      await writeContract(addresses[mode], "set_credit_ledger", [ledger]);
+      await writeContract(ledger, "approve_caller", [addresses[mode], true]);
+    }
+    console.log(`[deploy] wired credit ledger ${ledger} to the new modes`);
+  }
+
+  return { ...addresses, verdictdotfun: coreAddress, creditLedger: ledger ?? null };
 }
 
-const result = await deployFullStack();
+let result;
+if (deployTarget === "all") {
+  result = await deployFullStack();
+} else if (deployTarget === "new-modes") {
+  const existingCore = process.env.EXISTING_CORE_ADDRESS;
+  if (!existingCore) {
+    throw new Error('DEPLOY_TARGET="new-modes" requires EXISTING_CORE_ADDRESS to be set.');
+  }
+  result = await deployNewModes(existingCore);
+} else {
+  throw new Error('Set DEPLOY_TARGET to "all" or "new-modes".');
+}
 console.log(JSON.stringify(result, null, 2));

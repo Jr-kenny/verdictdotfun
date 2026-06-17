@@ -24,6 +24,10 @@ import {
   startRoom,
   submitEntry,
 } from "@/lib/verdictArena";
+import OraclePlay from "@/components/play/OraclePlay";
+import PersuadePlay from "@/components/play/PersuadePlay";
+import SketchPlay from "@/components/play/SketchPlay";
+import type { PlayHandle } from "@/components/play/types";
 
 const CHALLENGE_WINDOW_SECONDS = 3600; // display only; the contract enforces its own window
 
@@ -80,6 +84,7 @@ const RoomLobby = () => {
   const room = roomQuery.data;
   const modeMeta = mode ? GAME_MODE_META[mode] : null;
   const isRiddleMode = mode === "riddle";
+  const bespokeMode = mode === "sketch" || mode === "persuade" || mode === "oracle";
   const maxRiddleAttempts = 3;
   const activeIdentity = profileQuery.data?.profileAddress ?? walletAddress ?? null;
   const activeProfileName = profileQuery.data?.name ?? (shouldUseLocalProfileAlias() ? localProfileQuery.data ?? null : null);
@@ -99,10 +104,11 @@ const RoomLobby = () => {
   const isParticipant = amOwner || amOpponent;
   const canJoin = Boolean(walletAddress && room && !amOwner && isEmptyAddress(room.opponent));
   const canStart =
-    mode === "argue" &&
+    (mode === "argue" || mode === "bluff" || mode === "prompt_duel" || mode === "sketch" || mode === "persuade" || mode === "oracle") &&
     Boolean(walletAddress && room && amOwner && room.status === "ready_to_start") &&
     !isEmptyAddress(room?.opponent ?? "");
   const canSubmit =
+    !bespokeMode &&
     Boolean(walletAddress && room && room.status === "active" && (amOwner || amOpponent)) &&
     (
       isRiddleMode
@@ -111,7 +117,7 @@ const RoomLobby = () => {
         : (amOwner && !room.ownerSubmission) || (amOpponent && !room.opponentSubmission)
     );
   const canResolve =
-    mode === "argue" &&
+    (mode === "argue" || mode === "bluff" || mode === "prompt_duel") &&
     Boolean(walletAddress && room && room.status !== "resolved" && room.ownerSubmission && room.opponentSubmission) &&
     isParticipant;
   const canForfeit =
@@ -134,6 +140,22 @@ const RoomLobby = () => {
       queryClient.invalidateQueries({ queryKey: ["room", mode, roomId] }),
       queryClient.invalidateQueries({ queryKey: ["rooms"] }),
     ]);
+  }
+
+  // Shared setup for the bespoke play components: ensure network + local profile, then hand
+  // back the wallet handle. Throws (surfaced as a toast) if the wallet/profile isn't ready.
+  async function preparePlay(): Promise<PlayHandle> {
+    if (!walletAddress || !provider || !roomId || !mode) {
+      throw new Error("Wallet, provider, mode, or room is missing.");
+    }
+    if (shouldUseLocalProfileAlias() && !activeProfileName) {
+      throw new Error(missingProfileError);
+    }
+    await ensureArenaNetwork();
+    if (shouldUseLocalProfileAlias() && activeProfileName) {
+      await registerLocalProfile(mode, walletAddress, provider, activeProfileName);
+    }
+    return { account: walletAddress, provider };
   }
 
   const joinMutation = useMutation({
@@ -576,7 +598,7 @@ const RoomLobby = () => {
                         </div>
                       </div>
                     </>
-                  ) : (
+                  ) : bespokeMode ? null : (
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="rounded-2xl border border-border/70 bg-background/50 p-4">
                         <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">{room.ownerName || modeMeta.ownerLabel} submission</p>
@@ -589,7 +611,17 @@ const RoomLobby = () => {
                     </div>
                   )}
 
-                  {room.mode === "argue" && !room.prompt && room.status !== "resolved" && (
+                  {bespokeMode && mode && room.prompt && room.status !== "resolved" && (
+                    mode === "sketch" ? (
+                      <SketchPlay room={room} mode={mode} amOwner={amOwner} amOpponent={amOpponent} prepare={preparePlay} refresh={invalidateRoomState} />
+                    ) : mode === "persuade" ? (
+                      <PersuadePlay room={room} mode={mode} amOwner={amOwner} amOpponent={amOpponent} prepare={preparePlay} refresh={invalidateRoomState} />
+                    ) : (
+                      <OraclePlay room={room} mode={mode} amOwner={amOwner} amOpponent={amOpponent} prepare={preparePlay} refresh={invalidateRoomState} />
+                    )
+                  )}
+
+                  {(room.mode === "argue" || room.mode === "bluff" || room.mode === "prompt_duel" || room.mode === "sketch" || room.mode === "persuade" || room.mode === "oracle") && !room.prompt && room.status !== "resolved" && (
                     <div className="rounded-xl border border-border/60 bg-background/60 p-4 text-sm text-muted-foreground">
                       The room prompt will be generated after both players join and the room owner starts the match.
                     </div>
