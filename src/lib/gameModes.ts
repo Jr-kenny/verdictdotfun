@@ -1,6 +1,6 @@
 import type { ArenaMode, ArgueStyle } from "@/types/arena";
 
-export const ARENA_MODES: ArenaMode[] = ["argue", "riddle", "bluff", "prompt_duel", "sketch", "persuade"];
+export const ARENA_MODES: ArenaMode[] = ["argue", "riddle", "bluff", "prompt_duel", "sketch", "persuade", "oracle"];
 export const ARGUE_STYLES: ArgueStyle[] = ["debate", "convince"];
 
 export const GAME_MODE_META: Record<
@@ -97,10 +97,23 @@ export const GAME_MODE_META: Record<
     defaultCategory: "Culture",
     minimumSubmissionLength: 4,
   },
+  oracle: {
+    title: "Oracle Forecast",
+    summary: "Back YES or NO on a real-world question — the oracle reads the source and calls it.",
+    description: "Open an oracle room and the contract generates a YES/NO forecast question with a public source. The owner backs YES and the opponent backs NO; after the event anyone resolves the room, the contract fetches the source, and an LLM reads the outcome. The matching side wins, with a dispute window for the loser.",
+    ownerLabel: "Backs YES",
+    opponentLabel: "Backs NO",
+    promptLabel: "Forecast question",
+    submissionLabel: "Outcome",
+    promptPlaceholder: "The contract generates the question after the room owner starts the match.",
+    submissionPlaceholder: "Resolution is read from the source by the oracle.",
+    defaultCategory: "Web3",
+    minimumSubmissionLength: 1,
+  },
 };
 
 export function getArenaMode(value: string | undefined): ArenaMode | null {
-  if (value === "argue" || value === "riddle" || value === "bluff" || value === "prompt_duel" || value === "sketch" || value === "persuade") {
+  if (value === "argue" || value === "riddle" || value === "bluff" || value === "prompt_duel" || value === "sketch" || value === "persuade" || value === "oracle") {
     return value;
   }
 

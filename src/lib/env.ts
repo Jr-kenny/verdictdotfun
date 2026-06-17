@@ -39,6 +39,9 @@ const contractAddresses: Record<ArenaMode, string | null> = {
   persuade:
     cleanValue(import.meta.env.VITE_VERDICTDOTFUN_PERSUADE_CONTRACT_ADDRESS) ??
     cleanValue(import.meta.env.VITE_PERSUADE_CONTRACT_ADDRESS),
+  oracle:
+    cleanValue(import.meta.env.VITE_VERDICTDOTFUN_ORACLE_CONTRACT_ADDRESS) ??
+    cleanValue(import.meta.env.VITE_ORACLE_CONTRACT_ADDRESS),
 };
 
 const configuredModes = (Object.entries(contractAddresses) as [ArenaMode, string | null][])

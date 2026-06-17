@@ -8,7 +8,7 @@ Instead of treating the blockchain like a place to merely store outcomes, Verdic
 - game mode contracts run the actual match flow
 - player actions advance the game directly on-chain
 
-The current shipped modes are `argue`, `riddle`, `bluff`, `prompt_duel`, `sketch`, and `persuade`.
+The current shipped modes are `argue`, `riddle`, `bluff`, `prompt_duel`, `sketch`, `persuade`, and `oracle`.
 
 ## Deployed contracts
 
@@ -21,6 +21,7 @@ StudioNet, rebuilt engine with the generic mode registry + credit-wager wiring (
 - Mode (`prompt_duel`): pending deploy (needs funded keys) — set `VITE_VERDICTDOTFUN_PROMPT_DUEL_CONTRACT_ADDRESS` after deploying
 - Mode (`sketch`): pending deploy (needs funded keys) — set `VITE_VERDICTDOTFUN_SKETCH_CONTRACT_ADDRESS` after deploying
 - Mode (`persuade`): pending deploy (needs funded keys) — set `VITE_VERDICTDOTFUN_PERSUADE_CONTRACT_ADDRESS` after deploying
+- Mode (`oracle`): pending deploy (needs funded keys) — set `VITE_VERDICTDOTFUN_ORACLE_CONTRACT_ADDRESS` after deploying
 - Credit rail: CreditLedger `0xeb70F3bbC2706c9cC2A83BEf27B2D07fa1b07De5` (GenLayer) ↔ CreditVault `0x604bb7eb4dBCD4D1bd2A11166367284a5aFD1a9a` (Base Sepolia)
 - Verdict Stone (NFT): hub `0x6D612207Eea47Ccbd2Bab0D99bAaa54fFb189609` (Base Sepolia), GenLayer IC `0x0F603A6BBf535F173804491141fd2b67e8C2C94E`
 
@@ -46,7 +47,7 @@ This repo has two parts:
 
 The root contract is `contracts/verdictdotfun.py`. It owns player profiles, seasonal stats, leaderboard data, approved game contracts, and the room registry.
 
-There are six mode contracts:
+There are seven mode contracts:
 
 - `contracts/argue_game.py`
 - `contracts/riddle_game.py`
@@ -54,6 +55,7 @@ There are six mode contracts:
 - `contracts/prompt_duel_game.py`
 - `contracts/sketch_game.py`
 - `contracts/persuade_game.py`
+- `contracts/oracle_game.py`
 
 `argue` supports two room styles: `debate` and `convince`.
 
@@ -66,6 +68,8 @@ There are six mode contracts:
 `sketch` (Sketch & Guess) generates a drawing theme; each player uploads a drawing (pinned to IPFS) and then guesses what their opponent drew, and a vision model judges whether each guess matches the image.
 
 `persuade` (Persuade-the-Agent) generates a stubborn AI character; each player runs their own short conversation trying to change its mind, a concession meter tracks how far each got, and the higher meter wins.
+
+`oracle` (Oracle Forecast) generates a YES/NO question about a real-world event with a public source; the owner backs YES and the opponent backs NO, and the contract fetches the source and reads the outcome to settle the wager, with a dispute window.
 
 There is also an optional EVM profile badge/NFT mirror under `contracts/evm/` and the related deploy scripts in `deploy/`.
 
@@ -151,6 +155,14 @@ VerdictDotFun is not just a frontend that sends transactions to static contracts
 - A concession meter (0-100) tracks how far each player moved the character
 - The higher final meter wins; fewer turns breaks ties
 - The per-turn meter is the consensus value; the character reply is leader-only flavor
+
+### Oracle Forecast
+
+- The contract generates a YES/NO forecast question and a public resolution source
+- The room owner backs YES; the opponent backs NO
+- After the event, anyone calls resolve, the contract fetches the source via web access, and an LLM reads the outcome
+- The side matching the outcome wins; the loser can dispute within the challenge window
+- If live web access is unavailable, the operator can resolve via a gated fallback
 
 ## Tech stack
 
@@ -248,6 +260,6 @@ VerdictDotFun is a useful GenLayer demo because it shows a full multiplayer prod
 ## Limitations / TODO
 
 - The frontend still reads room lists directly from the mode contracts instead of reading a unified room index from the core.
-- There are only six shipped modes right now: argue, riddle, bluff, prompt_duel, sketch, and persuade.
+- There are only seven shipped modes right now: argue, riddle, bluff, prompt_duel, sketch, persuade, and oracle.
 - No profile transfer flow.
 - No quiz mode.

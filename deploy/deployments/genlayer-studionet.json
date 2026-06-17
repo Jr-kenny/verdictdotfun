@@ -11,12 +11,13 @@
     "bluff": { "role": "game mode", "address": "" },
     "prompt_duel": { "role": "game mode", "address": "" },
     "sketch": { "role": "game mode", "address": "" },
-    "persuade": { "role": "game mode", "address": "" }
+    "persuade": { "role": "game mode", "address": "" },
+    "oracle": { "role": "game mode", "address": "" }
   },
   "creditWager": {
     "ledger": "0xeb70F3bbC2706c9cC2A83BEf27B2D07fa1b07De5",
     "vault": "0x604bb7eb4dBCD4D1bd2A11166367284a5aFD1a9a",
-    "wired": "core + argue + riddle point at the ledger; modes are approved escrow callers; ledger.core = the core above. bluff, prompt_duel, sketch, and persuade will be wired the same way once deployed."
+    "wired": "core + argue + riddle point at the ledger; modes are approved escrow callers; ledger.core = the core above. bluff, prompt_duel, sketch, persuade, and oracle will be wired the same way once deployed."
   },
   "supersedes": "2026-06-17 stack core 0x9F4Cb5A8... (no bonus XP), and earlier 0x2d53d797..."
 }

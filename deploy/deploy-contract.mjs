@@ -40,6 +40,7 @@ const contractPaths = {
   prompt_duel: resolve(process.cwd(), "contracts", "prompt_duel_game.py"),
   sketch: resolve(process.cwd(), "contracts", "sketch_game.py"),
   persuade: resolve(process.cwd(), "contracts", "persuade_game.py"),
+  oracle: resolve(process.cwd(), "contracts", "oracle_game.py"),
 };
 
 const IN_PROGRESS_STATUSES = new Set([
@@ -370,6 +371,7 @@ async function deployFullStack() {
   const promptDuelAddress = await deployContract(contractPaths.prompt_duel, [coreAddress]);
   const sketchAddress = await deployContract(contractPaths.sketch, [coreAddress]);
   const persuadeAddress = await deployContract(contractPaths.persuade, [coreAddress]);
+  const oracleAddress = await deployContract(contractPaths.oracle, [coreAddress]);
 
   await writeContractWithForcedGas(coreAddress, "set_mode_contract", ["argue", argueAddress], {
     gas: 2_000_000n,
@@ -395,6 +397,10 @@ async function deployFullStack() {
     gas: 2_000_000n,
     status: TransactionStatus.FINALIZED,
   });
+  await writeContractWithForcedGas(coreAddress, "set_mode_contract", ["oracle", oracleAddress], {
+    gas: 2_000_000n,
+    status: TransactionStatus.FINALIZED,
+  });
 
   // Wire the credit-wager rail when a ledger is configured: point core + modes at the ledger and
   // authorize the modes to open/settle escrows. Without this the modes cannot escrow stakes.
@@ -407,6 +413,7 @@ async function deployFullStack() {
     await writeContract(promptDuelAddress, "set_credit_ledger", [ledger]);
     await writeContract(sketchAddress, "set_credit_ledger", [ledger]);
     await writeContract(persuadeAddress, "set_credit_ledger", [ledger]);
+    await writeContract(oracleAddress, "set_credit_ledger", [ledger]);
     await writeContract(ledger, "set_core", [coreAddress]);
     await writeContract(ledger, "approve_caller", [argueAddress, true]);
     await writeContract(ledger, "approve_caller", [riddleAddress, true]);
@@ -414,6 +421,7 @@ async function deployFullStack() {
     await writeContract(ledger, "approve_caller", [promptDuelAddress, true]);
     await writeContract(ledger, "approve_caller", [sketchAddress, true]);
     await writeContract(ledger, "approve_caller", [persuadeAddress, true]);
+    await writeContract(ledger, "approve_caller", [oracleAddress, true]);
     console.log(`[deploy] wired credit ledger ${ledger} to core + modes`);
   }
 
@@ -425,6 +433,7 @@ async function deployFullStack() {
     prompt_duel: promptDuelAddress,
     sketch: sketchAddress,
     persuade: persuadeAddress,
+    oracle: oracleAddress,
     creditLedger: ledger ?? null,
   };
 }
