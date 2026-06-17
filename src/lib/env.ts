@@ -36,6 +36,9 @@ const contractAddresses: Record<ArenaMode, string | null> = {
   sketch:
     cleanValue(import.meta.env.VITE_VERDICTDOTFUN_SKETCH_CONTRACT_ADDRESS) ??
     cleanValue(import.meta.env.VITE_SKETCH_CONTRACT_ADDRESS),
+  persuade:
+    cleanValue(import.meta.env.VITE_VERDICTDOTFUN_PERSUADE_CONTRACT_ADDRESS) ??
+    cleanValue(import.meta.env.VITE_PERSUADE_CONTRACT_ADDRESS),
 };
 
 const configuredModes = (Object.entries(contractAddresses) as [ArenaMode, string | null][])

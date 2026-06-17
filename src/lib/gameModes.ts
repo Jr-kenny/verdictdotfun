@@ -1,6 +1,6 @@
 import type { ArenaMode, ArgueStyle } from "@/types/arena";
 
-export const ARENA_MODES: ArenaMode[] = ["argue", "riddle", "bluff", "prompt_duel", "sketch"];
+export const ARENA_MODES: ArenaMode[] = ["argue", "riddle", "bluff", "prompt_duel", "sketch", "persuade"];
 export const ARGUE_STYLES: ArgueStyle[] = ["debate", "convince"];
 
 export const GAME_MODE_META: Record<
@@ -84,10 +84,23 @@ export const GAME_MODE_META: Record<
     defaultCategory: "Nature",
     minimumSubmissionLength: 2,
   },
+  persuade: {
+    title: "Persuade",
+    summary: "Talk a stubborn AI character around over a few turns — move the meter higher than your rival.",
+    description: "Open a persuade room and the contract generates a stubborn AI character. Each player gets their own short conversation trying to change its mind, and a concession meter tracks how far each moved it. The higher final meter wins, with fewer turns breaking ties.",
+    ownerLabel: "Player One",
+    opponentLabel: "Player Two",
+    promptLabel: "The character",
+    submissionLabel: "Your message",
+    promptPlaceholder: "The contract generates the character after the room owner starts the match.",
+    submissionPlaceholder: "Make your case to the character.",
+    defaultCategory: "Culture",
+    minimumSubmissionLength: 4,
+  },
 };
 
 export function getArenaMode(value: string | undefined): ArenaMode | null {
-  if (value === "argue" || value === "riddle" || value === "bluff" || value === "prompt_duel" || value === "sketch") {
+  if (value === "argue" || value === "riddle" || value === "bluff" || value === "prompt_duel" || value === "sketch" || value === "persuade") {
     return value;
   }
 

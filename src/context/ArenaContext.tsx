@@ -78,6 +78,12 @@ function buildInitialGameContracts(): Record<ArenaMode, GameContractState> {
       error: arenaEnv.contractAddresses.sketch ? null : "Set VITE_VERDICTDOTFUN_SKETCH_CONTRACT_ADDRESS after deployment.",
       schema: null,
     },
+    persuade: {
+      address: arenaEnv.contractAddresses.persuade,
+      status: arenaEnv.contractAddresses.persuade ? "checking" : "missing-config",
+      error: arenaEnv.contractAddresses.persuade ? null : "Set VITE_VERDICTDOTFUN_PERSUADE_CONTRACT_ADDRESS after deployment.",
+      schema: null,
+    },
   };
 }
 
