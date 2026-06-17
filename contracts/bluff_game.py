@@ -113,9 +113,9 @@ class BluffGame(gl.Contract):
     def register_profile(self, name: str):
         clean_name = name.strip()
         if len(clean_name) < 3:
-            raise Exception("Profile names must be at least 3 characters.")
+            raise gl.vm.UserError("[EXPECTED] Profile names must be at least 3 characters.")
         if len(clean_name) > 24:
-            raise Exception("Profile names must be 24 characters or fewer.")
+            raise gl.vm.UserError("[EXPECTED] Profile names must be 24 characters or fewer.")
         self.local_profiles[gl.message.sender_address] = LocalProfile(clean_name)
 
     @gl.public.write
@@ -158,9 +158,9 @@ class BluffGame(gl.Contract):
         join_identity = opponent_profile if self.core_contract != ZERO_ADDRESS else gl.message.sender_address
 
         if room.owner == join_identity:
-            raise Exception("The creator cannot join twice.")
+            raise gl.vm.UserError("[EXPECTED] The creator cannot join twice.")
         if room.opponent != ZERO_ADDRESS:
-            raise Exception("Room already has a second player.")
+            raise gl.vm.UserError("[EXPECTED] Room already has a second player.")
 
         self._require_profile_owner(opponent_profile)
         room.opponent = join_identity
@@ -651,35 +651,35 @@ Return JSON: {{"decision": "upheld" | "overturned", "reasoning": "<one or two se
 
     def _core(self) -> VerdictDotFunCore:
         if self.core_contract == ZERO_ADDRESS:
-            raise Exception("Core contract is not configured.")
+            raise gl.vm.UserError("[EXPECTED] Core contract is not configured.")
         return VerdictDotFunCore(self.core_contract)
 
     def _require_room(self, room_id: str) -> BluffRoom:
         normalized_id = room_id.strip().upper()
         if normalized_id not in self.rooms:
-            raise Exception("Room does not exist.")
+            raise gl.vm.UserError("[EXPECTED] Room does not exist.")
         return self.rooms[normalized_id]
 
     def _require_owner(self):
         if gl.message.sender_address != self.owner:
-            raise Exception("Only the contract owner can perform this action.")
+            raise gl.vm.UserError("[EXPECTED] Only the contract owner can perform this action.")
 
     def _require_profile_owner(self, profile_address: Address) -> Address:
         if self.core_contract == ZERO_ADDRESS:
             if gl.message.sender_address not in self.local_profiles:
-                raise Exception("Create a local profile before interacting with the bluff game.")
+                raise gl.vm.UserError("[EXPECTED] Create a local profile before interacting with the bluff game.")
             return gl.message.sender_address
 
         profile_address = self._normalize_address(profile_address)
         core = self._core()
         if not core.view().is_registered_profile(profile_address):
-            raise Exception("Register a profile before interacting with this game.")
+            raise gl.vm.UserError("[EXPECTED] Register a profile before interacting with this game.")
 
         owner = core.view().get_profile_owner(profile_address)
         if gl.message.sender_address == self.core_contract:
             return owner
         if owner != gl.message.sender_address:
-            raise Exception("Only the current holder of this profile can perform that action.")
+            raise gl.vm.UserError("[EXPECTED] Only the current holder of this profile can perform that action.")
         return owner
 
     def _require_player_name(self, profile_address: Address) -> str:
@@ -687,7 +687,7 @@ Return JSON: {{"decision": "upheld" | "overturned", "reasoning": "<one or two se
             profile = self.local_profiles.get(gl.message.sender_address)
             if profile and profile.name:
                 return profile.name
-            raise Exception("Create a local profile before interacting with the bluff game.")
+            raise gl.vm.UserError("[EXPECTED] Create a local profile before interacting with the bluff game.")
 
         profile_address = self._normalize_address(profile_address)
         self._require_profile_owner(profile_address)
@@ -695,7 +695,7 @@ Return JSON: {{"decision": "upheld" | "overturned", "reasoning": "<one or two se
         profile = core.view().get_profile_by_address(profile_address)
         handle = str(profile.get("handle", "")).strip()
         if not handle:
-            raise Exception("Profile did not return a valid handle.")
+            raise gl.vm.UserError("[EXPECTED] Profile did not return a valid handle.")
         return handle
 
     def _participant_role(self, room: BluffRoom) -> str:
@@ -705,25 +705,25 @@ Return JSON: {{"decision": "upheld" | "overturned", "reasoning": "<one or two se
                 return "owner"
             if room.opponent == sender:
                 return "opponent"
-            raise Exception("Only room participants can submit.")
+            raise gl.vm.UserError("[EXPECTED] Only room participants can submit.")
 
         core = self._core()
         if room.owner != ZERO_ADDRESS and core.view().get_profile_owner(room.owner) == sender:
             return "owner"
         if room.opponent != ZERO_ADDRESS and core.view().get_profile_owner(room.opponent) == sender:
             return "opponent"
-        raise Exception("Only room participants can submit.")
+        raise gl.vm.UserError("[EXPECTED] Only room participants can submit.")
 
     def _require_room_owner(self, room: BluffRoom):
         sender = gl.message.sender_address
         if self.core_contract == ZERO_ADDRESS:
             if room.owner != sender:
-                raise Exception("Only the room owner can start this room.")
+                raise gl.vm.UserError("[EXPECTED] Only the room owner can start this room.")
             return
 
         core = self._core()
         if room.owner == ZERO_ADDRESS or core.view().get_profile_owner(room.owner) != sender:
-            raise Exception("Only the room owner can start this room.")
+            raise gl.vm.UserError("[EXPECTED] Only the room owner can start this room.")
 
     def _now_epoch(self) -> int:
         raw = gl.message_raw["datetime"]
