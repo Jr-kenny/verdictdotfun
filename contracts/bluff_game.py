@@ -123,6 +123,91 @@ class BluffGame(gl.Contract):
         self._require_owner()
         self.credit_ledger = self._normalize_address(ledger)
 
+    @gl.public.write
+    def create_room(self, room_id: str, category: str, owner_profile: Address = ZERO_ADDRESS, stake: u256 = u256(0)):
+        owner_profile = self._normalize_address(owner_profile)
+        normalized_id = room_id.strip().upper()
+        normalized_category = self._normalize_category(category)
+
+        if self.single_room_only and len(self.room_ids) > 0:
+            raise gl.vm.UserError("[EXPECTED] This bluff room contract is already initialized.")
+        if not normalized_id:
+            raise gl.vm.UserError("[EXPECTED] Room id is required.")
+        if normalized_id in self.rooms:
+            return
+        if not normalized_category:
+            raise gl.vm.UserError("[EXPECTED] Category is required.")
+
+        owner_name = self._require_player_name(owner_profile)
+        room_owner = owner_profile if self.core_contract != ZERO_ADDRESS else gl.message.sender_address
+
+        self.rooms[normalized_id] = BluffRoom(
+            id=normalized_id, mode=MODE, owner=room_owner, owner_name=owner_name,
+            opponent=ZERO_ADDRESS, opponent_name="", category=normalized_category,
+            claim="", owner_submission="", opponent_submission="", status="waiting",
+            winner=ZERO_ADDRESS, owner_score=u16(0), opponent_score=u16(0),
+            verdict_reasoning="", stake=u256(int(stake)), provisional_at=u256(0),
+            appeal_state="none", appeal_reason="", appeal_result="", evidence_uri="",
+        )
+        self.room_ids.append(normalized_id)
+
+    @gl.public.write
+    def join_room(self, room_id: str, opponent_profile: Address = ZERO_ADDRESS):
+        opponent_profile = self._normalize_address(opponent_profile)
+        room = self._require_room(room_id)
+        join_identity = opponent_profile if self.core_contract != ZERO_ADDRESS else gl.message.sender_address
+
+        if room.owner == join_identity:
+            raise Exception("The creator cannot join twice.")
+        if room.opponent != ZERO_ADDRESS:
+            raise Exception("Room already has a second player.")
+
+        self._require_profile_owner(opponent_profile)
+        room.opponent = join_identity
+        room.opponent_name = self._require_player_name(opponent_profile)
+        room.status = "ready_to_start"
+        self.rooms[room.id] = room
+        self._open_escrow_if_staked(room)
+
+    def _open_escrow_if_staked(self, room: BluffRoom):
+        if self.credit_ledger == ZERO_ADDRESS:
+            return
+        if int(room.stake) <= 0:
+            return
+        CreditLedgerIface(self.credit_ledger).emit(on="accepted").open_escrow(
+            room.id, MODE, room.owner, room.opponent, room.stake
+        )
+
+    @gl.public.view
+    def get_room(self, room_id: str) -> TreeMap[str, typing.Any]:
+        normalized_id = room_id.strip().upper()
+        return self.rooms.get(
+            normalized_id,
+            BluffRoom(
+                id="",
+                mode=MODE,
+                owner=ZERO_ADDRESS,
+                owner_name="",
+                opponent=ZERO_ADDRESS,
+                opponent_name="",
+                category="",
+                claim="",
+                owner_submission="",
+                opponent_submission="",
+                status="waiting",
+                winner=ZERO_ADDRESS,
+                owner_score=u16(0),
+                opponent_score=u16(0),
+                verdict_reasoning="",
+                stake=u256(0),
+                provisional_at=u256(0),
+                appeal_state="none",
+                appeal_reason="",
+                appeal_result="",
+                evidence_uri="",
+            ),
+        )
+
     @gl.public.view
     def get_room_ids(self) -> DynArray[str]:
         return self.room_ids
