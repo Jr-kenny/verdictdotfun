@@ -407,6 +407,210 @@ The winner MUST be the player with the higher score.""".strip()
             raise gl.vm.UserError("[EXPECTED] Challenge window is still open.")
         self._settle_winner(room)
 
+    @gl.public.write
+    def forfeit_room(self, room_id: str):
+        room = self._require_room(room_id)
+
+        if room.status == "resolved":
+            raise gl.vm.UserError("[EXPECTED] Room already has a verdict.")
+        if room.opponent == ZERO_ADDRESS:
+            raise gl.vm.UserError("[EXPECTED] A bluff room needs two players before someone can quit.")
+
+        role = self._participant_role(room)
+        winner = room.opponent if role == "owner" else room.owner
+        winner_name = room.opponent_name if role == "owner" else room.owner_name
+        quitter_name = room.owner_name if role == "owner" else room.opponent_name
+
+        room.owner_score = u16(0 if role == "owner" else 100)
+        room.opponent_score = u16(100 if role == "owner" else 0)
+        room.verdict_reasoning = f"{quitter_name} quit the room, so {winner_name} wins by forfeit."
+        self._enter_provisional(room, winner)
+
+    @gl.public.write
+    def file_appeal(self, room_id: str, reason: str, evidence_uri: str = ""):
+        room = self._require_room(room_id)
+        if room.status != "provisional":
+            raise gl.vm.UserError("[EXPECTED] Only provisional rooms can be appealed.")
+        if room.appeal_state != "none":
+            raise gl.vm.UserError("[EXPECTED] An appeal has already been filed for this room.")
+
+        elapsed = self._now_epoch() - int(room.provisional_at)
+        if elapsed >= int(self.challenge_window_seconds):
+            raise gl.vm.UserError("[EXPECTED] The challenge window has closed.")
+
+        role = self._participant_role(room)
+        identity = room.owner if role == "owner" else room.opponent
+        loser = self._resolved_loser(room)
+        if identity != loser:
+            raise gl.vm.UserError("[EXPECTED] Only the losing player can file an appeal.")
+
+        cleaned = reason.strip()
+        if len(cleaned) < 8:
+            raise gl.vm.UserError("[EXPECTED] Appeal reason must be at least 8 characters.")
+        if len(cleaned) > 600:
+            raise gl.vm.UserError("[EXPECTED] Appeal reason must be 600 characters or fewer.")
+
+        room.appeal_state = "filed"
+        room.appeal_reason = cleaned
+        room.evidence_uri = self._normalize_evidence_cid(evidence_uri)
+        self.rooms[room.id] = room
+
+    def _normalize_evidence_cid(self, evidence_uri: str) -> str:
+        cid = evidence_uri.strip()
+        if not cid:
+            return ""
+        if cid.startswith("ipfs://"):
+            cid = cid[len("ipfs://"):]
+        if len(cid) < MIN_CID_LEN or len(cid) > MAX_CID_LEN:
+            raise gl.vm.UserError("[EXPECTED] Evidence CID length is out of range.")
+        if not cid.isalnum():
+            raise gl.vm.UserError("[EXPECTED] Evidence must be a bare IPFS CID (alphanumeric, no URL).")
+        return cid
+
+    def _fetch_evidence_image(self, cid: str) -> bytes:
+        res = gl.nondet.web.get(EVIDENCE_GATEWAY + cid, headers={"Accept": "image/*"})
+        if res.status >= 500:
+            raise gl.vm.UserError("[TRANSIENT] Evidence gateway is unavailable.")
+        if res.status >= 400:
+            raise gl.vm.UserError(f"[EXTERNAL] Evidence could not be fetched (status {res.status}).")
+        body = res.body or b""
+        if len(body) == 0:
+            raise gl.vm.UserError("[EXPECTED] Evidence image was empty.")
+        if len(body) > MAX_EVIDENCE_BYTES:
+            raise gl.vm.UserError("[EXPECTED] Evidence image exceeds the size limit.")
+        if not _is_supported_image(body):
+            raise gl.vm.UserError("[EXPECTED] Evidence is not a supported image format.")
+        return body
+
+    @gl.public.write
+    def judge_appeal(self, room_id: str):
+        room = self._require_room(room_id)
+        if room.status != "provisional":
+            raise gl.vm.UserError("[EXPECTED] Room is not awaiting a verdict.")
+        if room.appeal_state != "filed":
+            raise gl.vm.UserError("[EXPECTED] No appeal is pending for this room.")
+
+        prompt = self._build_appeal_prompt(room)
+        cid = room.evidence_uri
+
+        def leader_fn():
+            images = None
+            if cid:
+                try:
+                    images = [self._fetch_evidence_image(cid)]
+                except gl.vm.UserError as e:
+                    msg = e.message if hasattr(e, "message") else str(e)
+                    if msg.startswith("[TRANSIENT]"):
+                        raise  # retryable: revert so the appeal can be judged later
+                    # Deterministic bad evidence dismisses the appeal rather than
+                    # deadlocking the room (finalize is blocked while it is pending).
+                    return {"decision": "upheld",
+                            "reasoning": "Appeal evidence was not a fetchable image, so the provisional result stands."}
+            response = gl.nondet.exec_prompt(prompt, response_format="json", images=images)
+            return self._normalize_appeal(response)
+
+        def validator_fn(leaders_res: gl.vm.Result) -> bool:
+            if not isinstance(leaders_res, gl.vm.Return):
+                return self._appeal_errors_agree(leaders_res, leader_fn)
+            try:
+                validator = leader_fn()
+            except Exception:
+                return False  # leader succeeded, validator failed -> disagree
+            return validator["decision"] == leaders_res.calldata["decision"]
+
+        decision = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
+
+        room.appeal_state = "judged"
+        room.appeal_result = decision["decision"]
+        room.verdict_reasoning = room.verdict_reasoning + " | Appeal: " + decision["reasoning"]
+
+        if decision["decision"] == "upheld":
+            self.rooms[room.id] = room
+            self._settle_winner(room)
+        else:
+            room.status = "void"
+            self.rooms[room.id] = room
+            self._settle_void(room)
+
+    def _build_appeal_prompt(self, room: BluffRoom) -> str:
+        evidence_note = (
+            "The losing player attached an image as evidence; it is provided alongside this "
+            "prompt. Judge whether the attached image actually supports the stated reason — "
+            "ignore the claim if the image does not corroborate it.\n"
+            if room.evidence_uri
+            else "No image evidence was attached; judge on the written reason alone.\n"
+        )
+        return f"""APPEAL REVIEW — you are the impartial judge for a wager match.
+
+A provisional result was reached. The losing player has appealed. Decide whether the
+provisional result should stand ("upheld") or be voided and stakes refunded ("overturned").
+
+Overturn ONLY when the appeal shows the result was unfair due to a genuine technical
+fault (e.g., a verified disconnect that prevented play), NOT mere disagreement with the
+verdict or a desire to replay.
+
+{evidence_note}Match claim: {room.claim}
+Provisional verdict reasoning: {room.verdict_reasoning}
+Owner score: {int(room.owner_score)}  Opponent score: {int(room.opponent_score)}
+Appeal reason from the losing player: {room.appeal_reason}
+
+Return JSON: {{"decision": "upheld" | "overturned", "reasoning": "<one or two sentences>"}}"""
+
+    def _appeal_errors_agree(self, leaders_res: gl.vm.Result, leader_fn: typing.Callable) -> bool:
+        # Validator path for when the leader returned an error rather than a decision.
+        # Deterministic faults ([EXPECTED]/[EXTERNAL]) must match exactly; a transient
+        # gateway failure ([TRANSIENT]) agrees if the validator hit one too; anything
+        # else (LLM misbehavior) disagrees to force rotation.
+        leader_msg = leaders_res.message if hasattr(leaders_res, "message") else ""
+        try:
+            leader_fn()
+            return False  # leader errored, validator succeeded -> disagree
+        except gl.vm.UserError as e:
+            validator_msg = e.message if hasattr(e, "message") else str(e)
+            if validator_msg.startswith("[EXPECTED]") or validator_msg.startswith("[EXTERNAL]"):
+                return validator_msg == leader_msg
+            if validator_msg.startswith("[TRANSIENT]") and leader_msg.startswith("[TRANSIENT]"):
+                return True
+            return False
+        except Exception:
+            return False
+
+    def _normalize_appeal(self, response: typing.Any) -> typing.Dict[str, str]:
+        if not isinstance(response, dict):
+            raise gl.vm.UserError("[LLM_ERROR] Appeal response was not a JSON object.")
+        raw = str(response.get("decision", "")).strip().lower()
+        if raw not in ["upheld", "overturned"]:
+            if raw in ["uphold", "stand", "valid", "deny", "denied", "reject", "rejected"]:
+                raw = "upheld"
+            elif raw in ["overturn", "void", "refund", "grant", "granted", "accept", "accepted"]:
+                raw = "overturned"
+            else:
+                raise gl.vm.UserError(f"[LLM_ERROR] Unrecognized appeal decision: {raw}")
+        reasoning = str(response.get("reasoning", "")).strip()
+        if not reasoning:
+            reasoning = "No reasoning provided."
+        return {"decision": raw, "reasoning": reasoning}
+
+    @gl.public.write
+    def sync_profile_results(self, room_id: str):
+        room = self._require_room(room_id)
+        if room.status != "resolved":
+            raise gl.vm.UserError("[EXPECTED] Only resolved rooms can sync profile results.")
+
+        loser = self._resolved_loser(room)
+        if room.winner == ZERO_ADDRESS or loser == ZERO_ADDRESS:
+            raise gl.vm.UserError("[EXPECTED] Resolved room does not have a complete winner/loser pair.")
+
+        self._emit_profile_result(room.id, room.winner, loser, self._wager_bonus_xp(room))
+
+    @gl.public.write
+    def upgrade(self, new_code: bytes):
+        self._require_owner()
+        root = gl.storage.Root.get()
+        code = root.code.get()
+        code.truncate()
+        code.extend(new_code)
+
     @gl.public.view
     def get_room(self, room_id: str) -> TreeMap[str, typing.Any]:
         normalized_id = room_id.strip().upper()
