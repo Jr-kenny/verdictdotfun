@@ -83,4 +83,30 @@ export async function depositEthForCredits(
   return publicClient.waitForTransactionReceipt({ hash });
 }
 
+/** The exact message signed to authorize a redeem (must match the credit-bridge function). */
+export function redeemMessage(credits: number, wallet: string, issuedAt: number): string {
+  return `Verdict.fun: redeem ${credits} credits to ${wallet} at ${issuedAt}`;
+}
+
+/**
+ * Cash out: sign a redeem authorization and submit it to the credit-bridge function, which verifies
+ * the signature, debits the credits, and queues an on-chain payout settled on the next bridge tick.
+ */
+export async function requestRedeem(credits: number, account: Address, provider: BrowserEthereumProvider) {
+  if (!arenaEnv.creditBridgeUrl) throw new Error("Redeem endpoint is not configured.");
+  if (!Number.isInteger(credits) || credits <= 0) throw new Error("Enter a whole number of credits.");
+  const issuedAt = Date.now();
+  const walletClient = createWalletClient({ account, chain: baseSepolia, transport: custom(provider) });
+  const signature = await walletClient.signMessage({ account, message: redeemMessage(credits, account, issuedAt) });
+
+  const res = await fetch(arenaEnv.creditBridgeUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "redeem", credits, wallet: account, signature, issuedAt }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || "Redeem request failed.");
+  return data as { ok: boolean; queued: number };
+}
+
 export { formatEther };
