@@ -99,6 +99,18 @@ def test_verdictdotfun_applies_match_results_for_approved_game_contracts(direct_
     assert profile_data["xp"] == 100
 
 
+def test_verdictdotfun_wagered_win_earns_bonus_xp(direct_vm, direct_deploy, direct_alice, direct_bob):
+    direct_vm.sender = direct_alice
+    core = direct_deploy("contracts/verdictdotfun.py", 1)
+    profile = core.create_profile("Alice")
+    core.set_mode_contract("argue", direct_bob)
+
+    direct_vm.sender = direct_bob
+    core.apply_match_result(profile, "argue:wager1", True, "argue", 75)  # base 100 + 75 wager bonus
+
+    assert core.get_profile_by_address(profile)["xp"] == 175
+
+
 # ---- generic mode registry (sub-project #1, Plan 1B) ----
 MODE_X = "0x1111110000000000000000000000000000000011"
 MODE_Y = "0x2222220000000000000000000000000000000022"
