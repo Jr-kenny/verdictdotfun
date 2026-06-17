@@ -223,10 +223,10 @@ function parseRoom(mode: ArenaMode, raw: unknown): ArenaRoom | null {
     category: asString(record.category),
     // Bluff rooms store the generated text under `claim`, and prompt duel rooms under
     // `target`, instead of `prompt`.
-    prompt: asString(record.prompt) || asString(record.claim) || asString(record.target),
+    prompt: asString(record.prompt) || asString(record.claim) || asString(record.target) || asString(record.theme),
     houseStance: asString(record.house_stance),
-    ownerSubmission: asString(record.owner_submission),
-    opponentSubmission: asString(record.opponent_submission),
+    ownerSubmission: asString(record.owner_submission) || asString(record.owner_guess),
+    opponentSubmission: asString(record.opponent_submission) || asString(record.opponent_guess),
     status: asStatus(record.status),
     winner: asAddressString(record.winner) || EMPTY_ADDRESS,
     ownerScore: asNumber(record.owner_score),

@@ -1,6 +1,6 @@
 import type { ArenaMode, ArgueStyle } from "@/types/arena";
 
-export const ARENA_MODES: ArenaMode[] = ["argue", "riddle", "bluff", "prompt_duel"];
+export const ARENA_MODES: ArenaMode[] = ["argue", "riddle", "bluff", "prompt_duel", "sketch"];
 export const ARGUE_STYLES: ArgueStyle[] = ["debate", "convince"];
 
 export const GAME_MODE_META: Record<
@@ -71,10 +71,23 @@ export const GAME_MODE_META: Record<
     defaultCategory: "Tech",
     minimumSubmissionLength: 3,
   },
+  sketch: {
+    title: "Sketch & Guess",
+    summary: "Draw your theme, then guess what your rival drew — the vision judge calls it.",
+    description: "Open a sketch room and the contract generates a drawing theme. Each player uploads a drawing that fits the theme, then guesses what their opponent drew. A vision model judges whether each guess matches the image; more correct guesses wins.",
+    ownerLabel: "Player One",
+    opponentLabel: "Player Two",
+    promptLabel: "Drawing theme",
+    submissionLabel: "Your guess",
+    promptPlaceholder: "The contract generates the theme after the room owner starts the match.",
+    submissionPlaceholder: "Guess what your opponent drew.",
+    defaultCategory: "Nature",
+    minimumSubmissionLength: 2,
+  },
 };
 
 export function getArenaMode(value: string | undefined): ArenaMode | null {
-  if (value === "argue" || value === "riddle" || value === "bluff" || value === "prompt_duel") {
+  if (value === "argue" || value === "riddle" || value === "bluff" || value === "prompt_duel" || value === "sketch") {
     return value;
   }
 

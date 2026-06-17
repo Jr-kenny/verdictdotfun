@@ -14,7 +14,7 @@ import { createRoom, fetchAllRooms, fetchRoom, isEmptyAddress, registerLocalProf
 import { arenaEnv } from "@/lib/env";
 import { fetchCreditBalance, formatCredits } from "@/lib/creditRail";
 import type { ArenaMode, ArgueStyle } from "@/types/arena";
-import { Crosshair, Drama, Puzzle, Radio, Swords } from "lucide-react";
+import { Crosshair, Drama, Paintbrush, Puzzle, Radio, Swords } from "lucide-react";
 import { toast } from "sonner";
 
 const MODES: { id: ArenaMode; title: string; icon: typeof Swords; desc: string }[] = [
@@ -22,6 +22,7 @@ const MODES: { id: ArenaMode; title: string; icon: typeof Swords; desc: string }
   { id: "riddle", title: "Riddle", icon: Puzzle as typeof Swords, desc: "Three riddles per room. Each guess resolves immediately, with three tries per player per riddle." },
   { id: "bluff", title: "Bluff", icon: Drama as typeof Swords, desc: "Both players defend the same wild claim — out-bluff your rival." },
   { id: "prompt_duel", title: "Prompt Duel", icon: Crosshair as typeof Swords, desc: "Write the prompt that best recreates a hidden target — shortest wins ties." },
+  { id: "sketch", title: "Sketch & Guess", icon: Paintbrush as typeof Swords, desc: "Draw your theme, then guess what your rival drew — the vision judge calls it." },
 ];
 const CATEGORY_OPTIONS = ["Tech", "Web3", "Nature", "Culture", "Sports", "History"];
 

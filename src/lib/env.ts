@@ -33,6 +33,9 @@ const contractAddresses: Record<ArenaMode, string | null> = {
   prompt_duel:
     cleanValue(import.meta.env.VITE_VERDICTDOTFUN_PROMPT_DUEL_CONTRACT_ADDRESS) ??
     cleanValue(import.meta.env.VITE_PROMPT_DUEL_CONTRACT_ADDRESS),
+  sketch:
+    cleanValue(import.meta.env.VITE_VERDICTDOTFUN_SKETCH_CONTRACT_ADDRESS) ??
+    cleanValue(import.meta.env.VITE_SKETCH_CONTRACT_ADDRESS),
 };
 
 const configuredModes = (Object.entries(contractAddresses) as [ArenaMode, string | null][])

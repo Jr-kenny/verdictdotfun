@@ -72,6 +72,12 @@ function buildInitialGameContracts(): Record<ArenaMode, GameContractState> {
       error: arenaEnv.contractAddresses.prompt_duel ? null : "Set VITE_VERDICTDOTFUN_PROMPT_DUEL_CONTRACT_ADDRESS after deployment.",
       schema: null,
     },
+    sketch: {
+      address: arenaEnv.contractAddresses.sketch,
+      status: arenaEnv.contractAddresses.sketch ? "checking" : "missing-config",
+      error: arenaEnv.contractAddresses.sketch ? null : "Set VITE_VERDICTDOTFUN_SKETCH_CONTRACT_ADDRESS after deployment.",
+      schema: null,
+    },
   };
 }
 
