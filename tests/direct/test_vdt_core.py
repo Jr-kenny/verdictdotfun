@@ -63,6 +63,22 @@ def test_verdictdotfun_creates_riddle_rooms_without_argue_style_forwarding(direc
     assert core.get_room_mode("ROOM77") == "riddle"
 
 
+def test_verdictdotfun_forwards_a_stake_when_creating_a_room(direct_vm, direct_deploy, direct_alice):
+    # The router threads `stake` into the mode contract (the mode opens the credit-ledger escrow on
+    # join). Here we only assert the staked create path runs and registers the room; the cross-contract
+    # escrow itself is exercised in the mode suites.
+    direct_vm.sender = direct_alice
+    riddle_code = (Path(__file__).resolve().parents[2] / "contracts" / "riddle_game.py").read_text("utf-8")
+
+    core = direct_deploy("contracts/verdictdotfun.py", 1, "", "", "", riddle_code)
+    profile = core.create_profile("Alice")
+
+    room_contract = core.create_room("riddle", "STK1", "technology", profile, "debate", 5)
+
+    assert room_contract == core.get_mode_contract("riddle")
+    assert core.get_room_contract("STK1") == room_contract
+
+
 def test_verdictdotfun_applies_match_results_for_approved_game_contracts(direct_vm, direct_deploy, direct_alice, direct_bob):
     direct_vm.sender = direct_alice
     core = direct_deploy("contracts/verdictdotfun.py", 1)
