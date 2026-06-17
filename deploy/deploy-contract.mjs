@@ -36,6 +36,7 @@ const contractPaths = {
   verdictdotfun: resolve(process.cwd(), "contracts", "verdictdotfun.py"),
   argue: resolve(process.cwd(), "contracts", "argue_game.py"),
   riddle: resolve(process.cwd(), "contracts", "riddle_game.py"),
+  bluff: resolve(process.cwd(), "contracts", "bluff_game.py"),
 };
 
 const IN_PROGRESS_STATUSES = new Set([
@@ -362,12 +363,17 @@ async function deployFullStack() {
   const coreAddress = await deployContract(contractPaths.verdictdotfun, [initialSeason]);
   const argueAddress = await deployContract(contractPaths.argue, [coreAddress]);
   const riddleAddress = await deployContract(contractPaths.riddle, [coreAddress]);
+  const bluffAddress = await deployContract(contractPaths.bluff, [coreAddress]);
 
   await writeContractWithForcedGas(coreAddress, "set_mode_contract", ["argue", argueAddress], {
     gas: 2_000_000n,
     status: TransactionStatus.FINALIZED,
   });
   await writeContractWithForcedGas(coreAddress, "set_mode_contract", ["riddle", riddleAddress], {
+    gas: 2_000_000n,
+    status: TransactionStatus.FINALIZED,
+  });
+  await writeContractWithForcedGas(coreAddress, "set_mode_contract", ["bluff", bluffAddress], {
     gas: 2_000_000n,
     status: TransactionStatus.FINALIZED,
   });
@@ -379,9 +385,11 @@ async function deployFullStack() {
     await writeContract(coreAddress, "set_credit_ledger", [ledger]);
     await writeContract(argueAddress, "set_credit_ledger", [ledger]);
     await writeContract(riddleAddress, "set_credit_ledger", [ledger]);
+    await writeContract(bluffAddress, "set_credit_ledger", [ledger]);
     await writeContract(ledger, "set_core", [coreAddress]);
     await writeContract(ledger, "approve_caller", [argueAddress, true]);
     await writeContract(ledger, "approve_caller", [riddleAddress, true]);
+    await writeContract(ledger, "approve_caller", [bluffAddress, true]);
     console.log(`[deploy] wired credit ledger ${ledger} to core + modes`);
   }
 
@@ -389,6 +397,7 @@ async function deployFullStack() {
     verdictdotfun: coreAddress,
     argue: argueAddress,
     riddle: riddleAddress,
+    bluff: bluffAddress,
     creditLedger: ledger ?? null,
   };
 }
