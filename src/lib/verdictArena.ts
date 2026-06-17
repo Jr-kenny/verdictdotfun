@@ -200,10 +200,18 @@ function parseRoom(mode: ArenaMode, raw: unknown): ArenaRoom | null {
     return null;
   }
 
+  let stakeCredits = 0;
+  try {
+    stakeCredits = record.stake ? Number(BigInt(String(record.stake)) / 10n ** 18n) : 0;
+  } catch {
+    stakeCredits = 0;
+  }
+
   return {
     id,
     mode,
     argueStyle: record.argue_style === undefined ? undefined : asArgueStyle(record.argue_style),
+    stakeCredits,
     owner: asAddressString(record.owner) || EMPTY_ADDRESS,
     ownerName: asString(record.owner_name),
     opponent: asAddressString(record.opponent) || EMPTY_ADDRESS,

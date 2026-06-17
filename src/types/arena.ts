@@ -49,6 +49,7 @@ export interface ArenaRoom {
   id: string;
   mode: ArenaMode;
   argueStyle?: ArgueStyle;
+  stakeCredits: number; // wager per player in whole credits (0 = free room)
   owner: string;
   ownerName: string;
   opponent: string;
