@@ -23,19 +23,6 @@ MAX_TIER = 4
 MAX_DIVISION = 5
 
 
-@gl.contract_interface
-class GameModeContract:
-    class Write:
-        def create_room(
-            self,
-            room_id: str,
-            category: str,
-            owner_profile: Address = ZERO_ADDRESS,
-            argue_style: str = "debate",
-            /,
-        ) -> None: ...
-
-
 @allow_storage
 @dataclass
 class StoredProfile:
@@ -180,6 +167,7 @@ class VerdictDotFun(gl.Contract):
         category: str,
         owner_profile: Address = ZERO_ADDRESS,
         argue_style: str = "debate",
+        stake: u256 = u256(0),
     ) -> Address:
         normalized_id = room_id.strip().upper()
         normalized_mode = self._normalize_mode(mode)
@@ -205,18 +193,24 @@ class VerdictDotFun(gl.Contract):
         self.room_to_category[normalized_id] = category.strip()
         self.approved_games[room_contract] = True
 
+        # argue takes (id, category, profile, argue_style, stake); riddle takes (id, category,
+        # profile, stake). Use the generic contract proxy so each branch forwards its own arg shape
+        # (a typed interface only registers once per module in this runner).
+        normalized_stake = u256(int(stake)) if int(stake) > 0 else u256(0)
         if normalized_mode == "argue":
-            GameModeContract(room_contract).emit(on="accepted").create_room(
+            gl.get_contract_at(room_contract).emit(on="accepted").create_room(
                 normalized_id,
                 category,
                 normalized_profile,
                 normalized_style,
+                normalized_stake,
             )
         else:
-            GameModeContract(room_contract).emit(on="accepted").create_room(
+            gl.get_contract_at(room_contract).emit(on="accepted").create_room(
                 normalized_id,
                 category,
                 normalized_profile,
+                normalized_stake,
             )
         return room_contract
 
