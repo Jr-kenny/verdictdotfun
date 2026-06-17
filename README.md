@@ -12,11 +12,12 @@ The current shipped modes are `argue` and `riddle`.
 
 ## Deployed contracts
 
-StudioNet, rebuilt engine with the generic mode registry (replaces the hackathon contracts):
+StudioNet, rebuilt engine with the generic mode registry + credit-wager wiring (replaces the hackathon contracts):
 
-- Core (`verdictdotfun`): [0x2d53d797cEa724dfd3d0C1bB7512e4d7C64583D5](https://studio.genlayer.com/contracts?import-contract=0x2d53d797cEa724dfd3d0C1bB7512e4d7C64583D5)
-- Mode (`argue`): [0x56ff0722927E6e2e6b2CA5C9FfD2f4B75A0a7B39](https://studio.genlayer.com/contracts?import-contract=0x56ff0722927E6e2e6b2CA5C9FfD2f4B75A0a7B39)
-- Mode (`riddle`): [0x41Be0Ba7C08227A3e42FAAE357caA80D1a86784c](https://studio.genlayer.com/contracts?import-contract=0x41Be0Ba7C08227A3e42FAAE357caA80D1a86784c)
+- Core (`verdictdotfun`): [0x9F4Cb5A8cbbE04957976Ee8bCD2d53Ee6e6975dE](https://studio.genlayer.com/contracts?import-contract=0x9F4Cb5A8cbbE04957976Ee8bCD2d53Ee6e6975dE)
+- Mode (`argue`): [0x6Ba86Bd982c908Ce211553f04c33D0dbc97EED4d](https://studio.genlayer.com/contracts?import-contract=0x6Ba86Bd982c908Ce211553f04c33D0dbc97EED4d)
+- Mode (`riddle`): [0x64C10F8444eD15Fed8e24F31289BDDB9F8353f67](https://studio.genlayer.com/contracts?import-contract=0x64C10F8444eD15Fed8e24F31289BDDB9F8353f67)
+- Credit rail: CreditLedger `0xeb70F3bbC2706c9cC2A83BEf27B2D07fa1b07De5` (GenLayer) ↔ CreditVault `0x604bb7eb4dBCD4D1bd2A11166367284a5aFD1a9a` (Base Sepolia)
 - Verdict Stone (NFT): hub `0x6D612207Eea47Ccbd2Bab0D99bAaa54fFb189609` (Base Sepolia), GenLayer IC `0x0F603A6BBf535F173804491141fd2b67e8C2C94E`
 
 ## Why this project exists

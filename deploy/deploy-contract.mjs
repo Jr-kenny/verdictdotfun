@@ -372,10 +372,24 @@ async function deployFullStack() {
     status: TransactionStatus.FINALIZED,
   });
 
+  // Wire the credit-wager rail when a ledger is configured: point core + modes at the ledger and
+  // authorize the modes to open/settle escrows. Without this the modes cannot escrow stakes.
+  const ledger = process.env.CREDIT_LEDGER_CONTRACT_ADDRESS;
+  if (ledger) {
+    await writeContract(coreAddress, "set_credit_ledger", [ledger]);
+    await writeContract(argueAddress, "set_credit_ledger", [ledger]);
+    await writeContract(riddleAddress, "set_credit_ledger", [ledger]);
+    await writeContract(ledger, "set_core", [coreAddress]);
+    await writeContract(ledger, "approve_caller", [argueAddress, true]);
+    await writeContract(ledger, "approve_caller", [riddleAddress, true]);
+    console.log(`[deploy] wired credit ledger ${ledger} to core + modes`);
+  }
+
   return {
     verdictdotfun: coreAddress,
     argue: argueAddress,
     riddle: riddleAddress,
+    creditLedger: ledger ?? null,
   };
 }
 

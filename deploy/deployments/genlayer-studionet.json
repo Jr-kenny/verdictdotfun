@@ -1,21 +1,18 @@
 {
   "network": "studionet",
-  "deployedAt": "2026-06-16",
+  "deployedAt": "2026-06-17",
   "deployer": "0xa64f1832D8Dd4F8c6Ad434D3942a09fEFc9ad2b3",
   "explorer": "https://studio.genlayer.com/contracts?import-contract=",
-  "note": "Rebuilt game engine with the generic dynamic mode registry. Replaces the hackathon-era contracts (old core 0x26B1ed21..., argue 0x70836563..., riddle 0xF50432BB...). Core registers argue + riddle via set_mode_contract.",
+  "note": "Rebuilt game engine with the generic dynamic mode registry + credit-wager wiring. core.create_room threads a stake into the mode, which opens the CreditLedger escrow on join and finalizes the pot on the verdict. Deploy auto-wires the ledger (core + modes -> ledger, modes approved as escrow callers).",
   "contracts": {
-    "verdictdotfun": {
-      "role": "core / mode registry",
-      "address": "0x2d53d797cEa724dfd3d0C1bB7512e4d7C64583D5"
-    },
-    "argue": {
-      "role": "game mode",
-      "address": "0x56ff0722927E6e2e6b2CA5C9FfD2f4B75A0a7B39"
-    },
-    "riddle": {
-      "role": "game mode",
-      "address": "0x41Be0Ba7C08227A3e42FAAE357caA80D1a86784c"
-    }
-  }
+    "verdictdotfun": { "role": "core / mode registry", "address": "0x9F4Cb5A8cbbE04957976Ee8bCD2d53Ee6e6975dE" },
+    "argue": { "role": "game mode", "address": "0x6Ba86Bd982c908Ce211553f04c33D0dbc97EED4d" },
+    "riddle": { "role": "game mode", "address": "0x64C10F8444eD15Fed8e24F31289BDDB9F8353f67" }
+  },
+  "creditWager": {
+    "ledger": "0xeb70F3bbC2706c9cC2A83BEf27B2D07fa1b07De5",
+    "vault": "0x604bb7eb4dBCD4D1bd2A11166367284a5aFD1a9a",
+    "wired": "core + argue + riddle point at the ledger; argue + riddle are approved escrow callers; ledger.core = the core above"
+  },
+  "supersedes": "earlier studionet stack core 0x2d53d797..., argue 0x56ff0722..., riddle 0x41Be0Ba7... (no stake threading)"
 }
