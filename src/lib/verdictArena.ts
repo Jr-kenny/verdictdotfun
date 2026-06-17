@@ -221,7 +221,8 @@ function parseRoom(mode: ArenaMode, raw: unknown): ArenaRoom | null {
     opponent: asAddressString(record.opponent) || EMPTY_ADDRESS,
     opponentName: asString(record.opponent_name),
     category: asString(record.category),
-    prompt: asString(record.prompt),
+    // Bluff rooms store the generated text under `claim` instead of `prompt`.
+    prompt: asString(record.prompt) || asString(record.claim),
     houseStance: asString(record.house_stance),
     ownerSubmission: asString(record.owner_submission),
     opponentSubmission: asString(record.opponent_submission),

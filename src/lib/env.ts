@@ -29,6 +29,7 @@ const contractAddresses: Record<ArenaMode, string | null> = {
     cleanValue(import.meta.env.VITE_VERDICTDOTFUN_RIDDLE_CONTRACT_ADDRESS) ??
     cleanValue(import.meta.env.VITE_VDT_RIDDLE_CONTRACT_ADDRESS) ??
     cleanValue(import.meta.env.VITE_RIDDLE_CONTRACT_ADDRESS),
+  bluff: cleanValue(import.meta.env.VITE_VERDICTDOTFUN_BLUFF_CONTRACT_ADDRESS) ?? cleanValue(import.meta.env.VITE_BLUFF_CONTRACT_ADDRESS),
 };
 
 const configuredModes = (Object.entries(contractAddresses) as [ArenaMode, string | null][])

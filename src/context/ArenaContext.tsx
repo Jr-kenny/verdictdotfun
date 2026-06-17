@@ -60,6 +60,12 @@ function buildInitialGameContracts(): Record<ArenaMode, GameContractState> {
       error: arenaEnv.contractAddresses.riddle ? null : "Set VITE_VERDICTDOTFUN_RIDDLE_CONTRACT_ADDRESS after deployment.",
       schema: null,
     },
+    bluff: {
+      address: arenaEnv.contractAddresses.bluff,
+      status: arenaEnv.contractAddresses.bluff ? "checking" : "missing-config",
+      error: arenaEnv.contractAddresses.bluff ? null : "Set VITE_VERDICTDOTFUN_BLUFF_CONTRACT_ADDRESS after deployment.",
+      schema: null,
+    },
   };
 }
 

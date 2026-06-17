@@ -99,7 +99,7 @@ const RoomLobby = () => {
   const isParticipant = amOwner || amOpponent;
   const canJoin = Boolean(walletAddress && room && !amOwner && isEmptyAddress(room.opponent));
   const canStart =
-    mode === "argue" &&
+    (mode === "argue" || mode === "bluff") &&
     Boolean(walletAddress && room && amOwner && room.status === "ready_to_start") &&
     !isEmptyAddress(room?.opponent ?? "");
   const canSubmit =
@@ -111,7 +111,7 @@ const RoomLobby = () => {
         : (amOwner && !room.ownerSubmission) || (amOpponent && !room.opponentSubmission)
     );
   const canResolve =
-    mode === "argue" &&
+    (mode === "argue" || mode === "bluff") &&
     Boolean(walletAddress && room && room.status !== "resolved" && room.ownerSubmission && room.opponentSubmission) &&
     isParticipant;
   const canForfeit =
@@ -589,7 +589,7 @@ const RoomLobby = () => {
                     </div>
                   )}
 
-                  {room.mode === "argue" && !room.prompt && room.status !== "resolved" && (
+                  {(room.mode === "argue" || room.mode === "bluff") && !room.prompt && room.status !== "resolved" && (
                     <div className="rounded-xl border border-border/60 bg-background/60 p-4 text-sm text-muted-foreground">
                       The room prompt will be generated after both players join and the room owner starts the match.
                     </div>

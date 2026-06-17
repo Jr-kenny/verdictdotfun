@@ -14,12 +14,13 @@ import { createRoom, fetchAllRooms, fetchRoom, isEmptyAddress, registerLocalProf
 import { arenaEnv } from "@/lib/env";
 import { fetchCreditBalance, formatCredits } from "@/lib/creditRail";
 import type { ArenaMode, ArgueStyle } from "@/types/arena";
-import { Puzzle, Radio, Swords } from "lucide-react";
+import { Drama, Puzzle, Radio, Swords } from "lucide-react";
 import { toast } from "sonner";
 
 const MODES: { id: ArenaMode; title: string; icon: typeof Swords; desc: string }[] = [
   { id: "argue", title: "Argue", icon: Swords, desc: "Choose debate or convince when you open the room." },
   { id: "riddle", title: "Riddle", icon: Puzzle as typeof Swords, desc: "Three riddles per room. Each guess resolves immediately, with three tries per player per riddle." },
+  { id: "bluff", title: "Bluff", icon: Drama as typeof Swords, desc: "Both players defend the same wild claim — out-bluff your rival." },
 ];
 const CATEGORY_OPTIONS = ["Tech", "Web3", "Nature", "Culture", "Sports", "History"];
 
@@ -402,7 +403,7 @@ const Lobby = () => {
                     <DialogContent className="border-border/70 bg-card">
                       <DialogHeader>
                         <DialogTitle className="font-heading uppercase tracking-[0.12em]">
-                          Open a {selectedMode === "argue" ? "Argue" : "Riddle"} room
+                          Open a {currentMode?.title ?? selectedMode} room
                         </DialogTitle>
                       </DialogHeader>
                       <div className="space-y-4">
@@ -536,7 +537,7 @@ const Lobby = () => {
                                   Wager {formatCredits(room.stakeCredits)}
                                 </span>
                               )}
-                              {room.prompt || (room.mode === "argue" ? "Prompt pending until the room starts." : "Riddle loading...")}
+                              {room.prompt || (room.mode === "riddle" ? "Riddle loading..." : "Prompt pending until the room starts.")}
                               <span className="text-muted-foreground ml-2 text-xs">{room.id}</span>
                             </Link>
                           </motion.div>

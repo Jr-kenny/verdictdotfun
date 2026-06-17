@@ -1,6 +1,6 @@
 import type { ArenaMode, ArgueStyle } from "@/types/arena";
 
-export const ARENA_MODES: ArenaMode[] = ["argue", "riddle"];
+export const ARENA_MODES: ArenaMode[] = ["argue", "riddle", "bluff"];
 export const ARGUE_STYLES: ArgueStyle[] = ["debate", "convince"];
 
 export const GAME_MODE_META: Record<
@@ -45,10 +45,23 @@ export const GAME_MODE_META: Record<
     defaultCategory: "Culture",
     minimumSubmissionLength: 2,
   },
+  bluff: {
+    title: "Bluff",
+    summary: "Both players defend the same wild claim — out-bluff your rival.",
+    description: "Open a bluff room and the contract generates one hard-to-defend claim. Both players argue it is true, and the judge scores persuasiveness only, ignoring whether the claim is actually true.",
+    ownerLabel: "Player One",
+    opponentLabel: "Player Two",
+    promptLabel: "Room claim",
+    submissionLabel: "Your case",
+    promptPlaceholder: "The contract generates the claim after the room owner starts the match.",
+    submissionPlaceholder: "Write a clear, persuasive case that the claim is true.",
+    defaultCategory: "Tech",
+    minimumSubmissionLength: 40,
+  },
 };
 
 export function getArenaMode(value: string | undefined): ArenaMode | null {
-  if (value === "argue" || value === "riddle") {
+  if (value === "argue" || value === "riddle" || value === "bluff") {
     return value;
   }
 
