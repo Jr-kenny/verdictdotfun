@@ -7,6 +7,8 @@ export type ArenaRoomStatus =
   | "ready_to_start"
   | "studying"
   | "active"
+  | "provisional"
+  | "void"
   | "resolved";
 
 export interface ArenaProfile {
@@ -50,6 +52,8 @@ export interface ArenaRoom {
   mode: ArenaMode;
   argueStyle?: ArgueStyle;
   stakeCredits: number; // wager per player in whole credits (0 = free room)
+  appealState: string; // "none" | "filed" | "judged"
+  provisionalAt: number; // epoch seconds the provisional/challenge window opened (0 if not provisional)
   owner: string;
   ownerName: string;
   opponent: string;

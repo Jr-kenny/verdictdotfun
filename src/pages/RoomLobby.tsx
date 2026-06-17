@@ -13,6 +13,8 @@ import { fetchStoredLocalProfileName, getLocalProfileQueryKey } from "@/lib/loca
 import { fetchArenaProfile } from "@/lib/profileFactory";
 import {
   fetchRoom,
+  fileAppeal,
+  finalizeRoom,
   forfeitRoom,
   isEmptyAddress,
   joinRoom,
@@ -22,6 +24,8 @@ import {
   startRoom,
   submitEntry,
 } from "@/lib/verdictArena";
+
+const CHALLENGE_WINDOW_SECONDS = 3600; // display only; the contract enforces its own window
 
 function getSubmissionPreview(text: string, showResolvedSubmissions: boolean) {
   if (showResolvedSubmissions) {
@@ -53,6 +57,8 @@ const RoomLobby = () => {
   const queryClient = useQueryClient();
   const { walletAddress, walletReady, provider, ensureArenaNetwork, gameContracts } = useArena();
   const [submission, setSubmission] = useState("");
+  const [appealReason, setAppealReason] = useState("");
+  const [appealEvidence, setAppealEvidence] = useState("");
 
   const roomQuery = useQuery({
     queryKey: ["room", mode, roomId],
@@ -112,6 +118,17 @@ const RoomLobby = () => {
     Boolean(walletAddress && room && room.status !== "resolved" && isParticipant) &&
     !isEmptyAddress(room?.opponent ?? "");
 
+  const isProvisional = room?.status === "provisional";
+  const isLoser =
+    isParticipant &&
+    Boolean(room && !isEmptyAddress(room.winner) && room.winner.toLowerCase() !== activeIdentity?.toLowerCase());
+  const windowSecondsLeft =
+    room && room.provisionalAt
+      ? Math.max(0, CHALLENGE_WINDOW_SECONDS - (Math.floor(Date.now() / 1000) - room.provisionalAt))
+      : 0;
+  const canAppeal = Boolean(isProvisional && isLoser && room?.appealState === "none");
+  const canFinalize = Boolean(isProvisional && room?.appealState === "none" && windowSecondsLeft === 0);
+
   async function invalidateRoomState() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["room", mode, roomId] }),
@@ -140,6 +157,35 @@ const RoomLobby = () => {
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "Could not join room.");
     },
+  });
+
+  const appealMutation = useMutation({
+    mutationFn: async () => {
+      if (!walletAddress || !provider || !roomId || !mode) throw new Error("Wallet or room is missing.");
+      if (appealReason.trim().length < 4) throw new Error("Add a reason for the appeal.");
+      await ensureArenaNetwork();
+      return fileAppeal(mode, walletAddress, provider, roomId, appealReason, appealEvidence);
+    },
+    onSuccess: async () => {
+      setAppealReason("");
+      setAppealEvidence("");
+      await invalidateRoomState();
+      toast.success("Appeal filed. The GenLayer judge will review it.");
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Could not file the appeal."),
+  });
+
+  const finalizeMutation = useMutation({
+    mutationFn: async () => {
+      if (!walletAddress || !provider || !roomId || !mode) throw new Error("Wallet or room is missing.");
+      await ensureArenaNetwork();
+      return finalizeRoom(mode, walletAddress, provider, roomId);
+    },
+    onSuccess: async () => {
+      await invalidateRoomState();
+      toast.success("Room finalized.");
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Could not finalize yet."),
   });
 
   const submitMutation = useMutation({
@@ -354,6 +400,73 @@ const RoomLobby = () => {
                 </div>
               </div>
             </section>
+
+            {isProvisional && (
+              <section className="rounded-2xl border border-primary/40 bg-primary/5 p-6 glow-red-subtle">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-heading uppercase tracking-[0.24em] text-primary">Provisional result</p>
+                    <h2 className="mt-1 font-heading text-xl font-bold">
+                      Winner: {getWinnerLabel(room.winner, room.owner, room.opponent, room.ownerName, room.opponentName)}
+                    </h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {room.stakeCredits > 0 ? `Pot of ${room.stakeCredits * 2} credits stays escrowed. ` : ""}
+                      {windowSecondsLeft > 0
+                        ? `Challenge window: ~${Math.ceil(windowSecondsLeft / 60)} min left.`
+                        : "Challenge window closed — ready to finalize."}
+                    </p>
+                  </div>
+                  {canFinalize && (
+                    <Button variant="secondary" disabled={finalizeMutation.isPending} onClick={() => finalizeMutation.mutate()}>
+                      {finalizeMutation.isPending ? "Finalizing…" : "Finalize"}
+                    </Button>
+                  )}
+                </div>
+
+                {room.appealState === "filed" && (
+                  <p className="mt-4 rounded-xl border border-border/70 bg-background/60 p-3 text-sm text-muted-foreground">
+                    An appeal is under review by the GenLayer judge — the pot stays escrowed until it rules
+                    (uphold keeps the result, overturn voids the match and refunds both stakes).
+                  </p>
+                )}
+
+                {canAppeal && (
+                  <div className="mt-5 space-y-3 rounded-xl border border-border/70 bg-background/60 p-4">
+                    <p className="font-heading text-sm font-bold uppercase tracking-[0.16em]">Contest the result</p>
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      Appeal only for a genuine fault (e.g. a verified disconnect), not mere disagreement. The
+                      GenLayer judge decides: uphold keeps the result, overturn voids the match and refunds both stakes.
+                    </p>
+                    <textarea
+                      value={appealReason}
+                      onChange={(event) => setAppealReason(event.target.value.slice(0, 500))}
+                      placeholder="What went wrong?"
+                      rows={3}
+                      className="w-full rounded-lg border border-border/70 bg-background/60 p-3 text-sm outline-none focus:border-primary/50"
+                    />
+                    <input
+                      value={appealEvidence}
+                      onChange={(event) => setAppealEvidence(event.target.value.trim())}
+                      placeholder="Evidence IPFS CID (optional)"
+                      className="w-full rounded-lg border border-border/70 bg-background/60 p-2 font-mono text-xs outline-none focus:border-primary/50"
+                    />
+                    <Button
+                      className="w-full"
+                      disabled={appealMutation.isPending || appealReason.trim().length < 4}
+                      onClick={() => appealMutation.mutate()}
+                    >
+                      {appealMutation.isPending ? "Filing…" : "File appeal"}
+                    </Button>
+                  </div>
+                )}
+
+                {!isLoser && !canFinalize && room.appealState === "none" && (
+                  <p className="mt-4 text-sm text-muted-foreground">
+                    The losing player can contest until the window closes; the match finalizes automatically after that.
+                  </p>
+                )}
+              </section>
+            )}
 
             <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
               <section className="rounded-2xl border border-border/70 bg-card/80 p-6">
