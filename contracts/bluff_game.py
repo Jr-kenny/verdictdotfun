@@ -169,6 +169,54 @@ class BluffGame(gl.Contract):
         self.rooms[room.id] = room
         self._open_escrow_if_staked(room)
 
+    @gl.public.write
+    def start_room(self, room_id: str):
+        room = self._require_room(room_id)
+        if room.status == "resolved":
+            raise gl.vm.UserError("[EXPECTED] Room already has a verdict.")
+        if room.opponent == ZERO_ADDRESS:
+            raise gl.vm.UserError("[EXPECTED] A bluff room needs two players.")
+        if room.claim:
+            raise gl.vm.UserError("[EXPECTED] Room already started.")
+        self._require_room_owner(room)
+        room.claim = self._generate_claim(room.id, room.category)
+        room.status = "active"
+        self.rooms[room.id] = room
+
+    def _generate_claim(self, room_id: str, category: str) -> str:
+        generation_prompt = f"""
+Generate one hard-to-defend claim for a two-player persuasion game called Bluff.
+Both players will argue this same claim is TRUE; the judge scores who argues more
+convincingly, ignoring whether the claim is actually true.
+Return valid JSON only with this key:
+- "claim": one provocative, counterintuitive, or absurd-but-arguable claim, 24-200 characters
+
+Rules:
+- Category: {category}
+- The claim should be fun to defend and hard to prove, not hateful or about real living people.
+- Do not output lists, numbering, or explanation.
+- Use the room seed "{room_id}" to vary the result.
+        """.strip()
+
+        def leader_fn():
+            response = gl.nondet.exec_prompt(generation_prompt, response_format="json")
+            return self._normalize_generated_claim(response)
+
+        def validator_fn(leader_result):
+            if not isinstance(leader_result, gl.vm.Return):
+                return False
+            return self._is_valid_generated_claim(leader_result.calldata)
+
+        return gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
+
+    def _normalize_generated_claim(self, response: typing.Any) -> str:
+        if isinstance(response, dict):
+            return str(response.get("claim", "")).strip()
+        return str(response).strip()
+
+    def _is_valid_generated_claim(self, claim: typing.Any) -> bool:
+        return isinstance(claim, str) and 24 <= len(claim.strip()) <= 200
+
     def _open_escrow_if_staked(self, room: BluffRoom):
         if self.credit_ledger == ZERO_ADDRESS:
             return
