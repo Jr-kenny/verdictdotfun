@@ -107,6 +107,8 @@ function asStatus(value: unknown): ArenaRoomStatus {
     status === "ready_to_start" ||
     status === "studying" ||
     status === "active" ||
+    status === "provisional" ||
+    status === "void" ||
     status === "resolved"
   ) {
     return status;
@@ -212,6 +214,8 @@ function parseRoom(mode: ArenaMode, raw: unknown): ArenaRoom | null {
     mode,
     argueStyle: record.argue_style === undefined ? undefined : asArgueStyle(record.argue_style),
     stakeCredits,
+    appealState: asString(record.appeal_state) || "none",
+    provisionalAt: asNumber(record.provisional_at),
     owner: asAddressString(record.owner) || EMPTY_ADDRESS,
     ownerName: asString(record.owner_name),
     opponent: asAddressString(record.opponent) || EMPTY_ADDRESS,
@@ -473,6 +477,50 @@ export async function joinRoom(
   });
 
   void waitForReceipt(account, provider, hash).catch(() => undefined);
+  return hash;
+}
+
+export async function fileAppeal(
+  mode: ArenaMode,
+  account: Address,
+  provider: BrowserEthereumProvider,
+  roomId: string,
+  reason: string,
+  evidenceCid?: string,
+) {
+  const client = createWalletClient(account, provider);
+  const target = await resolveRoomTarget(mode);
+  if (!target) {
+    throw new Error("Room does not exist.");
+  }
+  const hash = await writeContractWithRetry(client, {
+    address: target.address,
+    functionName: "file_appeal",
+    args: [roomId, reason.trim(), (evidenceCid ?? "").trim()],
+    value: 0n,
+  });
+  await waitForReceipt(account, provider, hash, TransactionStatus.ACCEPTED).catch(() => undefined);
+  return hash;
+}
+
+export async function finalizeRoom(
+  mode: ArenaMode,
+  account: Address,
+  provider: BrowserEthereumProvider,
+  roomId: string,
+) {
+  const client = createWalletClient(account, provider);
+  const target = await resolveRoomTarget(mode);
+  if (!target) {
+    throw new Error("Room does not exist.");
+  }
+  const hash = await writeContractWithRetry(client, {
+    address: target.address,
+    functionName: "finalize_room",
+    args: [roomId],
+    value: 0n,
+  });
+  await waitForReceipt(account, provider, hash, TransactionStatus.ACCEPTED).catch(() => undefined);
   return hash;
 }
 
