@@ -8,7 +8,7 @@ Instead of treating the blockchain like a place to merely store outcomes, Verdic
 - game mode contracts run the actual match flow
 - player actions advance the game directly on-chain
 
-The current shipped modes are `argue`, `riddle`, and `bluff`.
+The current shipped modes are `argue`, `riddle`, `bluff`, and `prompt_duel`.
 
 ## Deployed contracts
 
@@ -18,6 +18,7 @@ StudioNet, rebuilt engine with the generic mode registry + credit-wager wiring (
 - Mode (`argue`): [0xace8CFCd2A0a42BFB46FD5Fdf0d87c306d2E76Eb](https://studio.genlayer.com/contracts?import-contract=0xace8CFCd2A0a42BFB46FD5Fdf0d87c306d2E76Eb)
 - Mode (`riddle`): [0xf5FddBAECd66C934a0Db1a337fFAE2a9bd9f23B6](https://studio.genlayer.com/contracts?import-contract=0xf5FddBAECd66C934a0Db1a337fFAE2a9bd9f23B6)
 - Mode (`bluff`): pending deploy (needs funded keys) — set `VITE_VERDICTDOTFUN_BLUFF_CONTRACT_ADDRESS` after deploying
+- Mode (`prompt_duel`): pending deploy (needs funded keys) — set `VITE_VERDICTDOTFUN_PROMPT_DUEL_CONTRACT_ADDRESS` after deploying
 - Credit rail: CreditLedger `0xeb70F3bbC2706c9cC2A83BEf27B2D07fa1b07De5` (GenLayer) ↔ CreditVault `0x604bb7eb4dBCD4D1bd2A11166367284a5aFD1a9a` (Base Sepolia)
 - Verdict Stone (NFT): hub `0x6D612207Eea47Ccbd2Bab0D99bAaa54fFb189609` (Base Sepolia), GenLayer IC `0x0F603A6BBf535F173804491141fd2b67e8C2C94E`
 
@@ -43,17 +44,20 @@ This repo has two parts:
 
 The root contract is `contracts/verdictdotfun.py`. It owns player profiles, seasonal stats, leaderboard data, approved game contracts, and the room registry.
 
-There are three mode contracts:
+There are four mode contracts:
 
 - `contracts/argue_game.py`
 - `contracts/riddle_game.py`
 - `contracts/bluff_game.py`
+- `contracts/prompt_duel_game.py`
 
 `argue` supports two room styles: `debate` and `convince`.
 
 `riddle` runs a three-round match. Each guess resolves immediately, each player gets up to three tries per riddle, and the higher score after three riddles wins. Equal scores resolve as a tie.
 
 `bluff` gives both players the same hard-to-defend AI-generated claim; each argues it is true, and the judge scores persuasiveness only, ignoring whether the claim is actually true.
+
+`prompt_duel` (Prompt Golf) generates a hidden target output; each player submits a prompt, and the judge scores how closely that prompt's output would reproduce the target, with the shorter prompt breaking ties.
 
 There is also an optional EVM profile badge/NFT mirror under `contracts/evm/` and the related deploy scripts in `deploy/`.
 
@@ -115,6 +119,14 @@ VerdictDotFun is not just a frontend that sends transactions to static contracts
 - Each player submits one argument
 - The final submission triggers verdict resolution in the same transaction
 - The judge scores persuasiveness only and explicitly ignores whether the claim is factually true
+
+### Prompt Duel
+
+- The contract generates one hidden target output after both players are ready
+- Each player submits one prompt designed to make a language model reproduce the target
+- The final submission triggers verdict resolution in the same transaction
+- The judge scores how closely each prompt's output would reproduce the target
+- A tie on scores is broken by prompt brevity: the shorter prompt wins
 
 ## Tech stack
 
@@ -212,6 +224,6 @@ VerdictDotFun is a useful GenLayer demo because it shows a full multiplayer prod
 ## Limitations / TODO
 
 - The frontend still reads room lists directly from the mode contracts instead of reading a unified room index from the core.
-- There are only three shipped modes right now: argue, riddle, and bluff.
+- There are only four shipped modes right now: argue, riddle, bluff, and prompt_duel.
 - No profile transfer flow.
 - No quiz mode.

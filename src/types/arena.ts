@@ -1,4 +1,4 @@
-export type ArenaMode = "argue" | "riddle" | "bluff";
+export type ArenaMode = "argue" | "riddle" | "bluff" | "prompt_duel";
 export type ArgueStyle = "debate" | "convince";
 
 export type ArenaRoomStatus =

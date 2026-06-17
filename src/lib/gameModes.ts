@@ -1,6 +1,6 @@
 import type { ArenaMode, ArgueStyle } from "@/types/arena";
 
-export const ARENA_MODES: ArenaMode[] = ["argue", "riddle", "bluff"];
+export const ARENA_MODES: ArenaMode[] = ["argue", "riddle", "bluff", "prompt_duel"];
 export const ARGUE_STYLES: ArgueStyle[] = ["debate", "convince"];
 
 export const GAME_MODE_META: Record<
@@ -58,10 +58,23 @@ export const GAME_MODE_META: Record<
     defaultCategory: "Tech",
     minimumSubmissionLength: 40,
   },
+  prompt_duel: {
+    title: "Prompt Duel",
+    summary: "Write the prompt that best recreates a hidden target — shortest wins ties.",
+    description: "Open a prompt duel room and the contract generates one hidden target output. Both players write a prompt designed to make a language model reproduce it, and the judge scores how closely each prompt's output would match. Ties are broken by prompt brevity.",
+    ownerLabel: "Player One",
+    opponentLabel: "Player Two",
+    promptLabel: "Target output",
+    submissionLabel: "Your prompt",
+    promptPlaceholder: "The contract generates the target after the room owner starts the match.",
+    submissionPlaceholder: "Write the prompt you think will most closely reproduce the target.",
+    defaultCategory: "Tech",
+    minimumSubmissionLength: 3,
+  },
 };
 
 export function getArenaMode(value: string | undefined): ArenaMode | null {
-  if (value === "argue" || value === "riddle" || value === "bluff") {
+  if (value === "argue" || value === "riddle" || value === "bluff" || value === "prompt_duel") {
     return value;
   }
 
