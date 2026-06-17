@@ -2,14 +2,14 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { ArrowDownToLine, Coins, Loader2, Wallet } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Coins, Loader2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import Header from "@/components/Header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useArena } from "@/context/ArenaContext";
 import { arenaEnv } from "@/lib/env";
-import { creditsForEth, depositEthForCredits, fetchCreditBalance, formatCredits } from "@/lib/creditRail";
+import { creditsForEth, depositEthForCredits, fetchCreditBalance, formatCredits, requestRedeem } from "@/lib/creditRail";
 import { fetchArenaProfile } from "@/lib/profileFactory";
 
 const PRESETS = ["0.001", "0.01", "0.05"];
@@ -49,6 +49,21 @@ const Credits = () => {
   });
 
   const previewCredits = creditsForEth(amount);
+  const balance = balanceQuery.data ?? 0;
+  const [redeemAmount, setRedeemAmount] = useState("");
+
+  const redeem = useMutation({
+    mutationFn: async () => {
+      if (!walletAddress || !provider) throw new Error("Connect a wallet first.");
+      return requestRedeem(Number(redeemAmount), walletAddress, provider);
+    },
+    onSuccess: async () => {
+      toast.success(`Redeem queued for ${redeemAmount} credits. ETH arrives once the bridge settles it.`);
+      setRedeemAmount("");
+      await queryClient.invalidateQueries({ queryKey: ["credit-balance", profileAddress] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Redeem failed."),
+  });
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -149,6 +164,39 @@ const Credits = () => {
                   (usually within a minute). Staked rooms draw from this balance, and the winner takes the pot.
                 </p>
               </div>
+
+              {/* cash out */}
+              {arenaEnv.creditBridgeUrl && (
+                <div className="mt-5 rounded-2xl border border-border/70 bg-card/60 p-6 backdrop-blur-sm">
+                  <div className="flex items-center gap-2">
+                    <ArrowUpFromLine className="h-5 w-5 text-primary" />
+                    <h2 className="font-heading text-lg font-bold uppercase tracking-[0.16em]">Cash out</h2>
+                    <span className="ml-auto font-mono text-xs text-muted-foreground">balance {formatCredits(balance)}</span>
+                  </div>
+                  <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                    <Input
+                      value={redeemAmount}
+                      onChange={(e) => setRedeemAmount(e.target.value.replace(/[^0-9]/g, ""))}
+                      inputMode="numeric"
+                      placeholder="Credits to redeem"
+                      className="flex-1 bg-background/60"
+                    />
+                    <Button
+                      variant="secondary"
+                      disabled={redeem.isPending || !redeemAmount || Number(redeemAmount) <= 0 || Number(redeemAmount) > balance}
+                      onClick={() => redeem.mutate()}
+                      className="font-heading uppercase tracking-[0.16em]"
+                    >
+                      {redeem.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUpFromLine className="mr-2 h-4 w-4" />}
+                      Redeem to ETH
+                    </Button>
+                  </div>
+                  <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+                    You sign a redeem authorization (no gas). The bridge debits your credits and releases the ETH to
+                    your wallet, usually within a minute.
+                  </p>
+                </div>
+              )}
 
               <div className="mt-6">
                 <Link to="/lobby">

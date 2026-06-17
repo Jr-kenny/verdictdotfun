@@ -57,5 +57,6 @@ export const arenaEnv = {
     cleanValue(import.meta.env.VITE_CREDIT_VAULT_ADDRESS) && cleanValue(import.meta.env.VITE_CREDIT_LEDGER_ADDRESS),
   ),
   creditsPerEth: Number(import.meta.env.VITE_CREDITS_PER_ETH ?? "2000"),
+  creditBridgeUrl: cleanValue(import.meta.env.VITE_CREDIT_BRIDGE_URL),
   profileEvmRpcUrl: cleanValue(import.meta.env.VITE_BASE_SEPOLIA_RPC_URL) ?? "https://sepolia.base.org",
 } as const;
