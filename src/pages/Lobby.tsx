@@ -184,9 +184,13 @@ const Lobby = () => {
   };
 
   return (
-    <div className="min-h-screen grid-bg">
+    <div className="min-h-screen grid-bg noise-bg relative">
       <Header centered />
-      <main className="pt-24 pb-12 px-4 max-w-6xl mx-auto grid md:grid-cols-5 gap-8">
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-72 opacity-60"
+        style={{ background: "radial-gradient(ellipse at 50% -10%, hsl(1 77% 55% / 0.16), transparent 60%)" }}
+      />
+      <main className="relative pt-24 pb-12 px-4 max-w-6xl mx-auto grid md:grid-cols-5 gap-8">
         <motion.div
           initial={{ opacity: 0, x: -30 }}
           animate={{ opacity: 1, x: 0 }}
@@ -198,9 +202,9 @@ const Lobby = () => {
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.2 }}
-              className="text-xs font-heading tracking-[0.3em] text-primary font-bold uppercase"
+              className="text-xs font-heading tracking-[0.4em] text-primary font-bold uppercase"
             >
-              Game Select
+              Verdict // Game Select
             </motion.span>
             <motion.h1
               initial={{ opacity: 0, y: 15 }}
@@ -210,7 +214,7 @@ const Lobby = () => {
             >
               Pick the game,
               <br />
-              <span className="text-primary">then open the room.</span>
+              <span className="text-gradient-red">then open the room.</span>
             </motion.h1>
           </div>
 

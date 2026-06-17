@@ -287,9 +287,13 @@ const RoomLobby = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen grid-bg noise-bg relative bg-background text-foreground">
       <Header />
-      <main className="mx-auto max-w-5xl px-6 pb-12 pt-28">
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-72 opacity-50"
+        style={{ background: "radial-gradient(ellipse at 50% -10%, hsl(1 77% 55% / 0.14), transparent 60%)" }}
+      />
+      <main className="relative mx-auto max-w-5xl px-6 pb-12 pt-28">
         <div className="mb-8">
           <BackButton
             isGame={canForfeit}
