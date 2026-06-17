@@ -32,6 +32,7 @@
     "deploy:profile:rewarders": "hardhat run deploy/set-profile-rewarders.cjs --network baseSepolia --config hardhat.config.cjs",
     "deploy:stone:hub": "hardhat run deploy/deploy-stone-hub.cjs --network baseSepolia --config hardhat.config.cjs",
     "wire:stone:hub": "hardhat run deploy/wire-stone-hub.cjs --network baseSepolia --config hardhat.config.cjs",
+    "deploy:stone:market": "hardhat run deploy/deploy-stone-market.cjs --network baseSepolia --config hardhat.config.cjs",
     "deploy:stone": "node ./deploy/deploy-stone.mjs",
     "relay:stone": "node ./deploy/stone-relay.mjs",
     "smoke:stone": "node ./deploy/smoke-stone.mjs",

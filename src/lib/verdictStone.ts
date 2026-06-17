@@ -1,6 +1,15 @@
-import { createPublicClient, getAddress, http, isAddress, type Address } from "viem";
+import {
+  createPublicClient,
+  createWalletClient,
+  custom,
+  getAddress,
+  http,
+  isAddress,
+  type Address,
+} from "viem";
 import { baseSepolia } from "viem/chains";
 import { arenaEnv } from "@/lib/env";
+import type { BrowserEthereumProvider } from "@/lib/ethereum";
 
 // Read-only view of the Verdict Stone hub (VerdictStoneHub, an ERC721Enumerable on Base Sepolia).
 // The Stone is the tradeable, level-ratcheting reputation NFT. Eligibility, minting and the
@@ -168,4 +177,172 @@ export function tierForLevel(level: number): StoneTier {
 export function shortProfile(value: string): string {
   if (!value || value.length < 10) return value || "unbound";
   return `${value.slice(0, 6)}…${value.slice(-4)}`;
+}
+
+// ---- marketplace (StoneMarket) ----------------------------------------------
+
+const marketAbi = [
+  {
+    type: "function",
+    name: "getListing",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [
+      { name: "seller", type: "address" },
+      { name: "price", type: "uint256" },
+      { name: "active", type: "bool" },
+    ],
+  },
+  { type: "function", name: "buy", stateMutability: "payable", inputs: [{ name: "tokenId", type: "uint256" }], outputs: [] },
+  {
+    type: "function",
+    name: "list",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "tokenId", type: "uint256" },
+      { name: "price", type: "uint256" },
+    ],
+    outputs: [],
+  },
+  { type: "function", name: "cancel", stateMutability: "nonpayable", inputs: [{ name: "tokenId", type: "uint256" }], outputs: [] },
+] as const;
+
+const erc721ApprovalAbi = [
+  {
+    type: "function",
+    name: "approve",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "tokenId", type: "uint256" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "getApproved",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "isApprovedForAll",
+    stateMutability: "view",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "operator", type: "address" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+] as const;
+
+export interface Listing {
+  seller: Address;
+  price: bigint;
+  active: boolean;
+}
+
+function marketAddress(): Address | null {
+  return arenaEnv.stoneMarketAddress && isAddress(arenaEnv.stoneMarketAddress)
+    ? getAddress(arenaEnv.stoneMarketAddress)
+    : null;
+}
+
+function walletClient(account: Address, provider: BrowserEthereumProvider) {
+  return createWalletClient({ account, chain: baseSepolia, transport: custom(provider) });
+}
+
+/** tokenId -> current listing (only active ones are returned). */
+export async function fetchListings(tokenIds: string[]): Promise<Record<string, Listing>> {
+  const market = marketAddress();
+  if (!market || tokenIds.length === 0) return {};
+  const c = client();
+  const entries = await Promise.all(
+    tokenIds.map(async (id) => {
+      const [seller, price, active] = await c.readContract({
+        address: market,
+        abi: marketAbi,
+        functionName: "getListing",
+        args: [BigInt(id)],
+        authorizationList: undefined,
+      });
+      return [id, { seller, price, active } as Listing] as const;
+    }),
+  );
+  return Object.fromEntries(entries.filter(([, l]) => l.active));
+}
+
+export async function buyStone(tokenId: string, priceWei: bigint, account: Address, provider: BrowserEthereumProvider) {
+  const market = marketAddress();
+  if (!market) throw new Error("Stone market is not configured.");
+  const hash = await walletClient(account, provider).writeContract({
+    address: market,
+    abi: marketAbi,
+    functionName: "buy",
+    args: [BigInt(tokenId)],
+    value: priceWei,
+    account,
+    chain: baseSepolia,
+  });
+  return client().waitForTransactionReceipt({ hash });
+}
+
+export async function listStone(tokenId: string, priceWei: bigint, account: Address, provider: BrowserEthereumProvider) {
+  const market = marketAddress();
+  const hub = hubAddress();
+  if (!market || !hub) throw new Error("Stone market is not configured.");
+  const c = client();
+  const wc = walletClient(account, provider);
+  // Approve the market for this stone if it is not already approved.
+  const approvedForAll = await c.readContract({
+    address: hub,
+    abi: erc721ApprovalAbi,
+    functionName: "isApprovedForAll",
+    args: [account, market],
+    authorizationList: undefined,
+  });
+  if (!approvedForAll) {
+    const approved = await c.readContract({
+      address: hub,
+      abi: erc721ApprovalAbi,
+      functionName: "getApproved",
+      args: [BigInt(tokenId)],
+      authorizationList: undefined,
+    });
+    if (getAddress(approved) !== market) {
+      const approveHash = await wc.writeContract({
+        address: hub,
+        abi: erc721ApprovalAbi,
+        functionName: "approve",
+        args: [market, BigInt(tokenId)],
+        account,
+        chain: baseSepolia,
+      });
+      await c.waitForTransactionReceipt({ hash: approveHash });
+    }
+  }
+  const hash = await wc.writeContract({
+    address: market,
+    abi: marketAbi,
+    functionName: "list",
+    args: [BigInt(tokenId), priceWei],
+    account,
+    chain: baseSepolia,
+  });
+  return c.waitForTransactionReceipt({ hash });
+}
+
+export async function cancelListing(tokenId: string, account: Address, provider: BrowserEthereumProvider) {
+  const market = marketAddress();
+  if (!market) throw new Error("Stone market is not configured.");
+  const hash = await walletClient(account, provider).writeContract({
+    address: market,
+    abi: marketAbi,
+    functionName: "cancel",
+    args: [BigInt(tokenId)],
+    account,
+    chain: baseSepolia,
+  });
+  return client().waitForTransactionReceipt({ hash });
 }
