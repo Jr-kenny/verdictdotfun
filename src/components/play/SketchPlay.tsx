@@ -2,10 +2,11 @@ import { useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { pinImage, submitDrawing, submitGuess } from "@/lib/verdictArena";
+import { uploadDrawing, submitDrawing, submitGuess } from "@/lib/verdictArena";
 import type { PlayProps } from "./types";
 
-const GATEWAY = "https://ipfs.io/ipfs/";
+// Drawings are hosted on catbox.moe; the stored value is already a full https://files.catbox.moe/ URL.
+const DRAWING_HOST = "https://files.catbox.moe/";
 
 function DrawingPad({ onExport, busy }: { onExport: (dataUrl: string) => void; busy: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -88,7 +89,7 @@ function DrawingPad({ onExport, busy }: { onExport: (dataUrl: string) => void; b
           disabled={busy}
           onClick={() => onExport(canvasRef.current!.toDataURL("image/png"))}
         >
-          {busy ? "Pinning & submitting…" : "Submit drawing"}
+          {busy ? "Uploading & submitting…" : "Submit drawing"}
         </Button>
       </div>
     </div>
@@ -98,7 +99,7 @@ function DrawingPad({ onExport, busy }: { onExport: (dataUrl: string) => void; b
 const SketchPlay = ({ room, mode, amOwner, amOpponent, prepare, refresh }: PlayProps) => {
   const isParticipant = amOwner || amOpponent;
   const [guess, setGuess] = useState("");
-  const [manualCid, setManualCid] = useState("");
+  const [manualUrl, setManualUrl] = useState("");
   const [showManual, setShowManual] = useState(false);
 
   const myDrawing = amOwner ? room.ownerDrawing ?? "" : room.opponentDrawing ?? "";
@@ -106,12 +107,12 @@ const SketchPlay = ({ room, mode, amOwner, amOpponent, prepare, refresh }: PlayP
   const myGuess = amOwner ? room.ownerSubmission : room.opponentSubmission;
 
   const drawingMutation = useMutation({
-    mutationFn: async (cid: string) => {
+    mutationFn: async (drawingUrl: string) => {
       const { account, provider } = await prepare();
-      return submitDrawing(mode, account, provider, room.id, cid);
+      return submitDrawing(mode, account, provider, room.id, drawingUrl);
     },
     onSuccess: async () => {
-      setManualCid("");
+      setManualUrl("");
       setShowManual(false);
       await refresh();
       toast.success("Drawing submitted.");
@@ -119,19 +120,19 @@ const SketchPlay = ({ room, mode, amOwner, amOpponent, prepare, refresh }: PlayP
     onError: (error) => toast.error(error instanceof Error ? error.message : "Could not submit your drawing."),
   });
 
-  const pinAndSubmit = useMutation({
+  const uploadAndSubmit = useMutation({
     mutationFn: async (dataUrl: string) => {
-      const cid = await pinImage(dataUrl);
+      const drawingUrl = await uploadDrawing(dataUrl);
       const { account, provider } = await prepare();
-      return submitDrawing(mode, account, provider, room.id, cid);
+      return submitDrawing(mode, account, provider, room.id, drawingUrl);
     },
     onSuccess: async () => {
       await refresh();
-      toast.success("Drawing pinned to IPFS and submitted.");
+      toast.success("Drawing uploaded and submitted.");
     },
     onError: (error) => {
       setShowManual(true);
-      toast.error(error instanceof Error ? error.message : "Pinning failed — paste a CID manually.");
+      toast.error(error instanceof Error ? error.message : "Upload failed — paste a drawing URL manually.");
     },
   });
 
@@ -148,7 +149,7 @@ const SketchPlay = ({ room, mode, amOwner, amOpponent, prepare, refresh }: PlayP
     onError: (error) => toast.error(error instanceof Error ? error.message : "Could not submit your guess."),
   });
 
-  const busy = pinAndSubmit.isPending || drawingMutation.isPending;
+  const busy = uploadAndSubmit.isPending || drawingMutation.isPending;
 
   return (
     <div className="space-y-4">
@@ -161,22 +162,24 @@ const SketchPlay = ({ room, mode, amOwner, amOpponent, prepare, refresh }: PlayP
       {room.status === "drawing" && isParticipant && !myDrawing && (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">Draw something that fits the theme. Your opponent will try to guess it.</p>
-          <DrawingPad onExport={(dataUrl) => pinAndSubmit.mutate(dataUrl)} busy={busy} />
+          <DrawingPad onExport={(dataUrl) => uploadAndSubmit.mutate(dataUrl)} busy={busy} />
           {showManual && (
             <div className="space-y-2 rounded-xl border border-border/70 bg-background/60 p-3">
-              <p className="text-xs text-muted-foreground">Auto-pinning is unavailable. Pin your image to IPFS and paste the CID:</p>
+              <p className="text-xs text-muted-foreground">
+                Auto-upload is unavailable. Upload your image to catbox.moe and paste its file URL:
+              </p>
               <input
-                value={manualCid}
-                onChange={(event) => setManualCid(event.target.value.trim())}
-                placeholder="bare IPFS CID"
+                value={manualUrl}
+                onChange={(event) => setManualUrl(event.target.value.trim())}
+                placeholder="https://files.catbox.moe/…"
                 className="w-full rounded-lg border border-border/70 bg-background/60 p-2 font-mono text-xs outline-none focus:border-primary/50"
               />
               <Button
                 className="w-full"
-                disabled={drawingMutation.isPending || manualCid.length < 16}
-                onClick={() => drawingMutation.mutate(manualCid)}
+                disabled={drawingMutation.isPending || !manualUrl.startsWith(DRAWING_HOST)}
+                onClick={() => drawingMutation.mutate(manualUrl)}
               >
-                {drawingMutation.isPending ? "Submitting…" : "Submit CID"}
+                {drawingMutation.isPending ? "Submitting…" : "Submit URL"}
               </Button>
             </div>
           )}
@@ -195,7 +198,7 @@ const SketchPlay = ({ room, mode, amOwner, amOpponent, prepare, refresh }: PlayP
           <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Your opponent's drawing</p>
           {theirDrawing ? (
             <img
-              src={GATEWAY + theirDrawing}
+              src={theirDrawing}
               alt="Opponent's drawing"
               className="w-full rounded-xl border border-border bg-white"
               style={{ aspectRatio: "3 / 2", objectFit: "contain" }}

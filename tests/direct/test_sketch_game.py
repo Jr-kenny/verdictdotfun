@@ -2,9 +2,10 @@ ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 # Image-evidence test helpers, mirrored from test_argue_game.py.
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 96  # PNG magic + filler
-GATEWAY = r"ipfs\.io/ipfs/"
-CID = "bafybeigdyrztexamplecidexamplecidexamplecid000"
-CID2 = "bafybeibbexamplecidexamplecidexamplecidxyz111"
+# Drawings are hosted on the keyless catbox.moe file host and fetched by URL.
+GATEWAY = r"files\.catbox\.moe"
+CID = "https://files.catbox.moe/draw1example111.png"
+CID2 = "https://files.catbox.moe/draw2example222.png"
 
 THEME_RE = r"(?s).*Generate one drawing THEME.*"
 JUDGE_RE = r"(?s).*judging a SKETCH & GUESS match.*"
@@ -111,7 +112,7 @@ def test_sketch_rejects_short_guess(direct_vm, direct_deploy, direct_alice, dire
         contract.submit_guess("R5", "x")
 
 
-def test_sketch_rejects_url_drawing(direct_vm, direct_deploy, direct_alice, direct_bob):
+def test_sketch_rejects_non_allowlisted_drawing(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = direct_deploy("contracts/sketch_game.py", ZERO_ADDRESS)
     direct_vm.mock_llm(THEME_RE, {"theme": "a wild animal"})
     direct_vm.sender = direct_alice
@@ -122,7 +123,7 @@ def test_sketch_rejects_url_drawing(direct_vm, direct_deploy, direct_alice, dire
     contract.join_room("R6")
     direct_vm.sender = direct_alice
     contract.start_room("R6")
-    with direct_vm.expect_revert("bare IPFS CID"):
+    with direct_vm.expect_revert("files.catbox.moe"):
         contract.submit_drawing("R6", "https://evil.example.com/x.png")
 
 

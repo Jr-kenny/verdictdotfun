@@ -14,6 +14,15 @@
     "persuade": { "role": "game mode", "address": "0x25789e3d6f078a60Db5e520D1756d569D2721cE9" },
     "oracle": { "role": "game mode", "address": "0x827059e0866c465d8D79E7f624988CC7A9D651e4" }
   },
+  "upgrades": [
+    {
+      "date": "2026-06-18",
+      "contract": "sketch",
+      "address": "0x32A720ae1C02319989306b037Ebce252Ec78BD7C",
+      "tx": "0xb645cd2981392e68939e5324a7db9a41b2e26971e21454fafb4c453655a3fc6c",
+      "note": "In-place upgrade(new_code): drawings now fetched from the keyless files.catbox.moe host (host allowlist = SSRF guard) instead of IPFS, so the draw->upload->submit flow is self-serve with no Pinata key. Same address; ledger/core wiring unchanged. Appeal evidence still uses IPFS."
+    }
+  ],
   "creditWager": {
     "ledger": "0xeb70F3bbC2706c9cC2A83BEf27B2D07fa1b07De5",
     "vault": "0x604bb7eb4dBCD4D1bd2A11166367284a5aFD1a9a",
