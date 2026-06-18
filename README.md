@@ -65,7 +65,7 @@ There are seven mode contracts:
 
 `prompt_duel` (Prompt Golf) generates a hidden target output; each player submits a prompt, and the judge scores how closely that prompt's output would reproduce the target, with the shorter prompt breaking ties.
 
-`sketch` (Sketch & Guess) generates a drawing theme; each player uploads a drawing (pinned to IPFS) and then guesses what their opponent drew, and a vision model judges whether each guess matches the image.
+`sketch` (Sketch & Guess) generates a drawing theme; each player uploads a drawing (hosted on the keyless catbox.moe file host) and then guesses what their opponent drew, and a vision model judges whether each guess matches the image.
 
 `persuade` (Persuade-the-Agent) generates a stubborn AI character; each player runs their own short conversation trying to change its mind, a concession meter tracks how far each got, and the higher meter wins.
 
@@ -143,7 +143,7 @@ VerdictDotFun is not just a frontend that sends transactions to static contracts
 ### Sketch & Guess
 
 - The contract generates a drawing theme after both players are ready
-- Each player uploads a drawing of something fitting the theme (pinned to IPFS, passed by CID)
+- Each player uploads a drawing of something fitting the theme (hosted on the keyless catbox.moe file host, passed as a URL)
 - Each player then guesses what their opponent drew
 - A vision model judges whether each guess matches the drawing it refers to
 - More correct guesses wins; drawing clarity breaks ties
