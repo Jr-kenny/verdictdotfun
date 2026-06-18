@@ -1,7 +1,8 @@
-// Vercel serverless function: pin an image data URL to IPFS via Pinata, return a bare CID.
-// Used by the Sketch & Guess mode so players can upload a drawing and get a content-addressed
-// CID the contract can fetch. Requires the PINATA_JWT environment variable; without it the
-// route returns 501 and the UI falls back to manual CID entry.
+// Vercel serverless function: upload a drawing (image data URL) to the keyless catbox.moe
+// file host and return its direct file URL. Used by Sketch & Guess so a player's drawing
+// gets a public URL the contract can fetch. No API key required (anonymous upload), so unlike
+// the previous Pinata/IPFS path this works out of the box. The contract only accepts URLs under
+// https://files.catbox.moe/, which we also assert here before handing one back to the client.
 
 type Req = { method?: string; body?: unknown };
 type Res = {
@@ -9,15 +10,12 @@ type Res = {
   json: (body: unknown) => void;
 };
 
+const CATBOX_API = "https://catbox.moe/user/api.php";
+const CATBOX_PREFIX = "https://files.catbox.moe/";
+
 export default async function handler(req: Req, res: Res) {
   if (req.method !== "POST") {
     res.status(405).json({ error: "Method not allowed." });
-    return;
-  }
-
-  const jwt = process.env.PINATA_JWT;
-  if (!jwt) {
-    res.status(501).json({ error: "Pinning is not configured (PINATA_JWT unset). Paste a CID manually." });
     return;
   }
 
@@ -44,28 +42,19 @@ export default async function handler(req: Req, res: Res) {
 
     const ext = mime === "image/jpeg" ? "jpg" : mime === "image/webp" ? "webp" : mime === "image/gif" ? "gif" : "png";
     const form = new FormData();
-    form.append("file", new Blob([bytes], { type: mime }), `sketch.${ext}`);
+    form.append("reqtype", "fileupload");
+    form.append("fileToUpload", new Blob([bytes], { type: mime }), `sketch.${ext}`);
 
-    const pinRes = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${jwt}` },
-      body: form,
-    });
+    const uploadRes = await fetch(CATBOX_API, { method: "POST", body: form });
+    const text = (await uploadRes.text()).trim();
 
-    if (!pinRes.ok) {
-      const text = await pinRes.text();
-      res.status(502).json({ error: `Pinata error: ${text.slice(0, 200)}` });
+    if (!uploadRes.ok || !text.startsWith(CATBOX_PREFIX)) {
+      res.status(502).json({ error: `Upload host error: ${text.slice(0, 200) || `status ${uploadRes.status}`}` });
       return;
     }
-
-    const out = (await pinRes.json()) as { IpfsHash?: string };
-    if (!out.IpfsHash) {
-      res.status(502).json({ error: "Pinata did not return a hash." });
-      return;
-    }
-    res.status(200).json({ cid: out.IpfsHash });
+    res.status(200).json({ url: text });
   } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : "Pin failed." });
+    res.status(500).json({ error: error instanceof Error ? error.message : "Upload failed." });
   }
 }
 

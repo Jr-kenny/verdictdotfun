@@ -15,6 +15,10 @@ CHALLENGE_WINDOW_SECONDS = 3600
 
 # Appeal image-evidence constants (identical to argue; appeals reuse the vision path).
 EVIDENCE_GATEWAY = "https://ipfs.io/ipfs/"
+# Sketch drawings are uploaded to a keyless public file host; the contract fetches the URL
+# directly. Only this host is allowed, which is the SSRF guard (no internal/arbitrary URLs).
+ALLOWED_DRAWING_PREFIX = "https://files.catbox.moe/"
+MAX_DRAWING_URL_LEN = 300
 MAX_CID_LEN = 100
 MIN_CID_LEN = 16
 MAX_EVIDENCE_BYTES = 5 * 1024 * 1024  # 5 MiB
@@ -184,17 +188,17 @@ class SketchGame(gl.Contract):
         if room.status != "drawing":
             raise gl.vm.UserError("[EXPECTED] This sketch room is not accepting drawings.")
 
-        cid = self._normalize_drawing_cid(evidence_uri)
+        url = self._normalize_drawing_url(evidence_uri)
 
         role = self._participant_role(room)
         if role == "owner":
             if room.owner_drawing:
                 raise gl.vm.UserError("[EXPECTED] You already submitted your drawing.")
-            room.owner_drawing = cid
+            room.owner_drawing = url
         else:
             if room.opponent_drawing:
                 raise gl.vm.UserError("[EXPECTED] You already submitted your drawing.")
-            room.opponent_drawing = cid
+            room.opponent_drawing = url
 
         if room.owner_drawing and room.opponent_drawing:
             room.status = "guessing"
@@ -229,15 +233,13 @@ class SketchGame(gl.Contract):
             return
         self.rooms[room.id] = room
 
-    def _normalize_drawing_cid(self, evidence_uri: str) -> str:
-        cid = evidence_uri.strip()
-        if cid.startswith("ipfs://"):
-            cid = cid[len("ipfs://"):]
-        if len(cid) < MIN_CID_LEN or len(cid) > MAX_CID_LEN:
-            raise gl.vm.UserError("[EXPECTED] Drawing CID length is out of range.")
-        if not cid.isalnum():
-            raise gl.vm.UserError("[EXPECTED] Drawing must be a bare IPFS CID (alphanumeric, no URL).")
-        return cid
+    def _normalize_drawing_url(self, evidence_uri: str) -> str:
+        url = evidence_uri.strip()
+        if not url.startswith(ALLOWED_DRAWING_PREFIX):
+            raise gl.vm.UserError("[EXPECTED] Drawing must be a https://files.catbox.moe/ URL.")
+        if len(url) > MAX_DRAWING_URL_LEN:
+            raise gl.vm.UserError("[EXPECTED] Drawing URL is too long.")
+        return url
 
     @gl.public.write
     def start_room(self, room_id: str):
@@ -354,18 +356,35 @@ Rules:
         winner = room.owner if winner_role == "owner" else room.opponent
         self._enter_provisional(room, winner)
 
-    def _try_fetch_drawing(self, cid: str):
+    def _try_fetch_drawing(self, url: str):
         # Returns image bytes, or None when the drawing is deterministically unusable
-        # (missing / non-image). A transient gateway failure re-raises so judging retries.
-        if not cid:
+        # (missing / non-image). A transient host failure re-raises so judging retries.
+        if not url:
             return None
         try:
-            return self._fetch_evidence_image(cid)
+            return self._fetch_drawing_image(url)
         except gl.vm.UserError as e:
             msg = e.message if hasattr(e, "message") else str(e)
             if msg.startswith("[TRANSIENT]"):
                 raise
             return None
+
+    def _fetch_drawing_image(self, url: str) -> bytes:
+        if not url.startswith(ALLOWED_DRAWING_PREFIX):
+            raise gl.vm.UserError("[EXPECTED] Drawing URL host is not allowed.")
+        res = gl.nondet.web.get(url, headers={"Accept": "image/*"})
+        if res.status >= 500:
+            raise gl.vm.UserError("[TRANSIENT] Drawing host is unavailable.")
+        if res.status >= 400:
+            raise gl.vm.UserError(f"[EXTERNAL] Drawing could not be fetched (status {res.status}).")
+        body = res.body or b""
+        if len(body) == 0:
+            raise gl.vm.UserError("[EXPECTED] Drawing image was empty.")
+        if len(body) > MAX_EVIDENCE_BYTES:
+            raise gl.vm.UserError("[EXPECTED] Drawing image exceeds the size limit.")
+        if not _is_supported_image(body):
+            raise gl.vm.UserError("[EXPECTED] Drawing is not a supported image format.")
+        return body
 
     def _resolve_unfetchable(self, owner_ok: bool, opponent_ok: bool) -> TreeMap[str, typing.Any]:
         # A player whose drawing cannot be read forfeits the round; their opponent could

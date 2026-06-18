@@ -660,9 +660,9 @@ export function submitDrawing(
   account: Address,
   provider: BrowserEthereumProvider,
   roomId: string,
-  cid: string,
+  drawingUrl: string,
 ) {
-  return writeRoomAction(mode, account, provider, "submit_drawing", [roomId, cid.trim()]);
+  return writeRoomAction(mode, account, provider, "submit_drawing", [roomId, drawingUrl.trim()]);
 }
 
 export function submitGuess(
@@ -695,9 +695,9 @@ export function finishPersuading(
   return writeRoomAction(mode, account, provider, "finish_persuading", [roomId], TransactionStatus.FINALIZED);
 }
 
-// Pin an image (data URL) to IPFS via the serverless route, returning a bare CID.
-// Falls back to a clear error so the UI can offer manual CID entry.
-export async function pinImage(dataUrl: string): Promise<string> {
+// Upload an image (data URL) to the keyless catbox.moe host via the serverless route,
+// returning its direct file URL. Falls back to a clear error so the UI can offer manual entry.
+export async function uploadDrawing(dataUrl: string): Promise<string> {
   const response = await fetch("/api/pin", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -710,13 +710,13 @@ export async function pinImage(dataUrl: string): Promise<string> {
     } catch {
       detail = "";
     }
-    throw new Error(detail || "Pinning is not configured. Paste a CID manually instead.");
+    throw new Error(detail || "Upload is not available. Paste a drawing URL manually instead.");
   }
-  const data = (await response.json()) as { cid?: string };
-  if (!data.cid) {
-    throw new Error("Pinning did not return a CID. Paste a CID manually instead.");
+  const data = (await response.json()) as { url?: string };
+  if (!data.url) {
+    throw new Error("Upload did not return a URL. Paste a drawing URL manually instead.");
   }
-  return data.cid;
+  return data.url;
 }
 
 export function isEmptyAddress(address: string) {

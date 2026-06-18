@@ -27,6 +27,11 @@ const riddleAddress =
   process.env.VITE_VERDICTDOTFUN_RIDDLE_CONTRACT_ADDRESS ??
   process.env.VDT_RIDDLE_CONTRACT_ADDRESS ??
   process.env.VITE_VDT_RIDDLE_CONTRACT_ADDRESS;
+const sketchAddress =
+  process.env.VERDICTDOTFUN_SKETCH_CONTRACT_ADDRESS ??
+  process.env.VITE_VERDICTDOTFUN_SKETCH_CONTRACT_ADDRESS ??
+  process.env.VDT_SKETCH_CONTRACT_ADDRESS ??
+  process.env.VITE_VDT_SKETCH_CONTRACT_ADDRESS;
 
 if (!privateKey) {
   throw new Error("Set GENLAYER_DEPLOYER_PRIVATE_KEY before upgrading contracts.");
@@ -69,6 +74,10 @@ const contracts = {
     address: riddleAddress,
     path: resolve(process.cwd(), "contracts", "riddle_game.py"),
   },
+  sketch: {
+    address: sketchAddress,
+    path: resolve(process.cwd(), "contracts", "sketch_game.py"),
+  },
 };
 
 const selectedContracts =
@@ -77,7 +86,7 @@ const selectedContracts =
     : Object.entries(contracts).filter(([name]) => name === upgradeTarget);
 
 if (selectedContracts.length === 0) {
-  throw new Error('Set UPGRADE_TARGET to "all", "verdictdotfun", "argue", or "riddle".');
+  throw new Error('Set UPGRADE_TARGET to "all", "verdictdotfun", "argue", "riddle", or "sketch".');
 }
 
 function normalizeHash(hash) {
